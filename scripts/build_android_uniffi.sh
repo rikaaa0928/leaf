@@ -109,7 +109,7 @@ done
 
 # Build the library for the host system. This is required by uniffi-bindgen to
 # generate the language bindings.
-export PATH=OLD_PATH
+export PATH=$OLD_PATH
 cargo build -p $package --lib $mode
 
 # Determine the host library extension based on the OS.
