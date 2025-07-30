@@ -90,4 +90,9 @@ fn main() {
             .run()
             .expect("Protobuf code gen failed");
     }
+
+    // ROG protobuf generation
+    if std::path::Path::new("src/proxy/rog/proto/rog.proto").exists() {
+        tonic_build::compile_protos("src/proxy/rog/proto/rog.proto");
+    }
 }
