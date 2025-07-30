@@ -27,7 +27,7 @@ HOST_OS=`uname -s | tr "[:upper:]" "[:lower:]"`
 
 # HOST_ARCH=`uname -m | tr "[:upper:]" "[:lower:]"`
 HOST_ARCH=x86_64
-
+export OLD_PATH=$PATH
 export PATH="$NDK_HOME/toolchains/llvm/prebuilt/$HOST_OS-$HOST_ARCH/bin/":$PATH
 
 android_tools="$NDK_HOME/toolchains/llvm/prebuilt/$HOST_OS-$HOST_ARCH/bin"
@@ -109,6 +109,7 @@ done
 
 # Build the library for the host system. This is required by uniffi-bindgen to
 # generate the language bindings.
+export PATH=OLD_PATH
 cargo build -p $package --lib $mode
 
 # Determine the host library extension based on the OS.
