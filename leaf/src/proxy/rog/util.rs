@@ -22,8 +22,12 @@ pub struct RogConnector {
 #[cfg(feature = "outbound-rog")]
 impl RogConnector {
     pub fn new(address: &str, port: u16) -> Self {
+        let mut schema = "https";
+        if port != 443 {
+            schema = "http";
+        }
         Self {
-            endpoint: format!("https://{}:{}", address, port),
+            endpoint: format!("{}://{}:{}", schema, address, port),
             max_retries: 3,
             retry_delay: Duration::from_millis(1000),
         }
@@ -57,9 +61,11 @@ impl RogConnector {
 
         Err(io::Error::new(
             io::ErrorKind::Other,
-            format!("Failed to connect to ROG server after {} attempts: {}", 
-                   self.max_retries + 1, 
-                   last_error.unwrap())
+            format!(
+                "Failed to connect to ROG server after {} attempts: {}",
+                self.max_retries + 1,
+                last_error.unwrap()
+            ),
         ))
     }
 }
