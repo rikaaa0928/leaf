@@ -121,12 +121,18 @@ impl NatManager {
         client_ch_tx: &Sender<UdpPacket>,
         pkt: UdpPacket,
     ) {
+        error!("[NAT-MANAGER] Received UDP packet to send: src={}, dst={}, inbound_tag={}, size={} bytes", 
+               dgram_src, pkt.dst_addr, inbound_tag, pkt.data.len());
+        
         let mut guard = self.sessions.lock().await;
 
         if guard.contains_key(dgram_src) {
+            error!("[NAT-MANAGER] Found existing session for source: src={}, dst={}", dgram_src, pkt.dst_addr);
             self._send(&mut guard, dgram_src, pkt);
             return;
         }
+        
+        error!("[NAT-MANAGER] No existing session found, creating new session: src={}, dst={}", dgram_src, pkt.dst_addr);
 
         let mut sess = sess.cloned().unwrap_or(Session {
             network: Network::Udp,
@@ -139,16 +145,18 @@ impl NatManager {
             sess.inbound_tag = inbound_tag.to_string();
         }
 
+        error!("[NAT-MANAGER] Adding new session to session map: src={}, dst={}", dgram_src, pkt.dst_addr);
         self.add_session(sess, *dgram_src, client_ch_tx.clone(), &mut guard)
             .await;
 
-        debug!(
-            "added udp session {} -> {} ({})",
+        error!(
+            "[NAT-MANAGER] Added UDP session successfully: {} -> {} (total_sessions={})",
             &dgram_src,
             &pkt.dst_addr,
             guard.len(),
         );
 
+        error!("[NAT-MANAGER] Sending initial packet through new session: src={}, dst={}", dgram_src, pkt.dst_addr);
         self._send(&mut guard, dgram_src, pkt);
 
         drop(guard);
@@ -179,43 +187,54 @@ impl NatManager {
         // because we have stream type transports for UDP traffic, establishing a
         // TCP stream would block the task.
         tokio::spawn(async move {
+            error!("[NAT-MANAGER] Starting dispatch task for session: src={}", raddr);
             // new socket to communicate with the target.
+            error!("[NAT-MANAGER] Dispatching datagram through outbound: src={}", raddr);
             let socket = match dispatcher.dispatch_datagram(sess).await {
-                Ok(s) => s,
+                Ok(s) => {
+                    error!("[NAT-MANAGER] Datagram dispatch successful: src={}", raddr);
+                    s
+                },
                 Err(e) => {
-                    debug!("dispatch {} failed: {}", &raddr, e);
+                    error!("[NAT-MANAGER] Datagram dispatch failed: src={}, error={}", raddr, e);
                     sessions.lock().await.remove(&raddr);
                     return;
                 }
             };
 
             let (mut target_sock_recv, mut target_sock_send) = socket.split();
+            
+            error!("[NAT-MANAGER] Starting downlink and uplink tasks for session: src={}", raddr);
 
             // downlink
             let downlink_task = async move {
+                error!("[NAT-MANAGER] Downlink task started for session: src={}", raddr);
                 let mut buf = vec![0u8; *crate::option::DATAGRAM_BUFFER_SIZE * 1024];
                 loop {
                     match target_sock_recv.recv_from(&mut buf).await {
                         Err(err) => {
-                            debug!(
-                                "Failed to receive downlink packets on session {}: {}",
+                            error!(
+                                "[NAT-MANAGER] Failed to receive downlink packets on session {}: {}",
                                 &raddr, err
                             );
                             break;
                         }
                         Ok((n, addr)) => {
-                            trace!("outbound received UDP packet: src {}, {} bytes", &addr, n);
+                            error!("[NAT-MANAGER] Received downlink UDP packet: session={}, src={}, size={} bytes", raddr, addr, n);
                             let pkt = UdpPacket::new(
                                 buf[..n].to_vec(),
                                 addr.clone(),
                                 SocksAddr::from(raddr.address),
                             );
+                            error!("[NAT-MANAGER] Sending downlink packet to client: session={}, src={}, dst={}, size={} bytes", raddr, addr, pkt.dst_addr, n);
                             if let Err(err) = client_ch_tx.send(pkt).await {
-                                debug!(
-                                    "Failed to send downlink packets on session {} to {}: {}",
+                                error!(
+                                    "[NAT-MANAGER] Failed to send downlink packets on session {} to {}: {}",
                                     &raddr, &addr, err
                                 );
                                 break;
+                            } else {
+                                error!("[NAT-MANAGER] Downlink packet sent to client successfully: session={}, src={}", raddr, addr);
                             }
 
                             // activity update
@@ -251,22 +270,28 @@ impl NatManager {
 
             // uplink
             tokio::spawn(async move {
+                error!("[NAT-MANAGER] Uplink task started for session: src={}", raddr);
                 while let Some(pkt) = target_ch_rx.recv().await {
-                    trace!(
-                        "outbound send UDP packet: dst {}, {} bytes",
-                        &pkt.dst_addr,
-                        pkt.data.len()
+                    error!(
+                        "[NAT-MANAGER] Received uplink UDP packet from client: session={}, dst={}, size={} bytes",
+                        &raddr, &pkt.dst_addr, pkt.data.len()
                     );
+                    error!("[NAT-MANAGER] Sending uplink packet to target: session={}, dst={}, size={} bytes", raddr, pkt.dst_addr, pkt.data.len());
                     if let Err(e) = target_sock_send.send_to(&pkt.data, &pkt.dst_addr).await {
-                        debug!(
-                            "Failed to send uplink packets on session {} to {}: {:?}",
+                        error!(
+                            "[NAT-MANAGER] Failed to send uplink packets on session {} to {}: {:?}",
                             &raddr, &pkt.dst_addr, e
                         );
                         break;
+                    } else {
+                        error!("[NAT-MANAGER] Uplink packet sent to target successfully: session={}, dst={}", raddr, pkt.dst_addr);
                     }
                 }
+                error!("[NAT-MANAGER] Closing uplink connection for session: src={}", raddr);
                 if let Err(e) = target_sock_send.close().await {
-                    debug!("Failed to close outbound datagram {}: {}", &raddr, e);
+                    error!("[NAT-MANAGER] Failed to close outbound datagram {}: {}", &raddr, e);
+                } else {
+                    error!("[NAT-MANAGER] Uplink connection closed successfully for session: src={}", raddr);
                 }
             });
         });

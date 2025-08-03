@@ -79,22 +79,29 @@ async fn handle_inbound_datagram(
     let ls_cloned = ls.clone();
     tokio::spawn(async move {
         while let Some(pkt) = l_rx.recv().await {
+            error!("[TUN-INBOUND] Received downlink packet from NAT manager: src={}, dst={}, size={} bytes", pkt.src_addr, pkt.dst_addr, pkt.data.len());
             let src_addr = match pkt.src_addr {
-                SocksAddr::Ip(a) => a,
+                SocksAddr::Ip(a) => {
+                    error!("[TUN-INBOUND] Downlink packet source is IP: {}", a);
+                    a
+                },
                 SocksAddr::Domain(domain, port) => {
+                    error!("[TUN-INBOUND] Downlink packet source is domain, resolving to fake IP: {}:{}", domain, port);
                     if let Some(ip) = fakedns_cloned.query_fake_ip(&domain).await {
-                        SocketAddr::new(ip, port)
+                        let addr = SocketAddr::new(ip, port);
+                        error!("[TUN-INBOUND] Domain resolved to fake IP: {}:{} -> {}", domain, port, addr);
+                        addr
                     } else {
-                        warn!(
-                                "Received datagram with source address {}:{} without paired fake IP found.",
-                                &domain, &port
-                            );
+                        error!("[TUN-INBOUND] Failed to resolve domain to fake IP, dropping packet: {}:{}", domain, port);
                         continue;
                     }
                 }
             };
+            error!("[TUN-INBOUND] Sending downlink packet to netstack: src={}, dst={}, size={} bytes", src_addr, pkt.dst_addr.must_ip(), pkt.data.len());
             if let Err(e) = ls_cloned.send_to(&pkt.data[..], &src_addr, pkt.dst_addr.must_ip()) {
-                warn!("A packet failed to send to the netstack: {}", e);
+                error!("[TUN-INBOUND] Failed to send downlink packet to netstack: src={}, dst={}, error={}", src_addr, pkt.dst_addr.must_ip(), e);
+            } else {
+                error!("[TUN-INBOUND] Downlink packet sent to netstack successfully: src={}, dst={}", src_addr, pkt.dst_addr.must_ip());
             }
         }
     });
@@ -106,17 +113,23 @@ async fn handle_inbound_datagram(
                 warn!("Failed to accept a datagram from netstack: {}", e);
             }
             Ok((data, src_addr, dst_addr)) => {
+                error!("[TUN-INBOUND] Received UDP packet: src={}, dst={}, size={} bytes", src_addr, dst_addr, data.len());
+                
                 // Fake DNS logic.
                 if dst_addr.port() == 53 {
+                    error!("[TUN-INBOUND] Processing DNS request: src={}, dst={}, query_size={} bytes", src_addr, dst_addr, data.len());
                     match fakedns.generate_fake_response(&data).await {
                         Ok(resp) => {
+                            error!("[TUN-INBOUND] Generated fake DNS response: src={}, dst={}, response_size={} bytes", src_addr, dst_addr, resp.len());
                             if let Err(e) = ls.send_to(resp.as_ref(), &dst_addr, &src_addr) {
-                                warn!("A packet failed to send to the netstack: {}", e);
+                                error!("[TUN-INBOUND] Failed to send DNS response back to netstack: src={}, dst={}, error={}", src_addr, dst_addr, e);
+                            } else {
+                                error!("[TUN-INBOUND] DNS response sent successfully: src={}, dst={}", src_addr, dst_addr);
                             }
                             continue;
                         }
                         Err(err) => {
-                            trace!("generate fake ip failed: {}", err);
+                            error!("[TUN-INBOUND] Failed to generate fake DNS response: src={}, dst={}, error={}", src_addr, dst_addr, err);
                         }
                     }
                 }
@@ -134,24 +147,26 @@ async fn handle_inbound_datagram(
                 // with domain name destination, leaf itself of course supports
                 // this feature very well.
                 let dst_addr = if fakedns.is_fake_ip(&dst_addr.ip()).await {
+                    error!("[TUN-INBOUND] Detected fake IP, resolving domain: ip={}", dst_addr.ip());
                     if let Some(domain) = fakedns.query_domain(&dst_addr.ip()).await {
+                        error!("[TUN-INBOUND] Fake IP resolved to domain: ip={} -> domain={}:{}", dst_addr.ip(), domain, dst_addr.port());
                         SocksAddr::Domain(domain, dst_addr.port())
                     } else {
-                        debug!(
-                            "No paired domain found for this fake IP: {}, datagram is rejected.",
-                            &dst_addr.ip()
-                        );
+                        error!("[TUN-INBOUND] No paired domain found for fake IP, rejecting packet: ip={}", dst_addr.ip());
                         continue;
                     }
                 } else {
+                    error!("[TUN-INBOUND] Using real IP address: ip={}", dst_addr);
                     SocksAddr::Ip(dst_addr)
                 };
 
                 let dgram_src = DatagramSource::new(src_addr, None);
-                let pkt = UdpPacket::new(data, SocksAddr::Ip(src_addr), dst_addr);
+                let pkt = UdpPacket::new(data, SocksAddr::Ip(src_addr), dst_addr.clone());
+                error!("[TUN-INBOUND] Sending UDP packet to NAT manager: src={}, dst={}, inbound_tag={}", src_addr, dst_addr, inbound_tag);
                 nat_manager
                     .send(None, &dgram_src, &inbound_tag, &l_tx, pkt)
                     .await;
+                error!("[TUN-INBOUND] UDP packet sent to NAT manager successfully: src={}, dst={}", src_addr, dst_addr);
             }
         }
     }

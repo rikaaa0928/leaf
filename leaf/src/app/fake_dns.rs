@@ -90,19 +90,28 @@ impl FakeDnsImpl {
     }
 
     pub(self) fn generate_fake_response(&mut self, request: &[u8]) -> Result<Vec<u8>> {
-        let req = Message::from_vec(request)?;
+        tracing::error!("[FAKE-DNS] Processing DNS request: size={} bytes", request.len());
+        let req = Message::from_vec(request).map_err(|e| {
+            tracing::error!("[FAKE-DNS] Failed to parse DNS request: error={}", e);
+            e
+        })?;
 
         if req.queries().is_empty() {
+            tracing::error!("[FAKE-DNS] DNS request contains no queries");
             return Err(anyhow!("no queries in this DNS request"));
         }
 
         let query = &req.queries()[0];
+        tracing::error!("[FAKE-DNS] DNS query details: class={:?}, type={:?}", query.query_class(), query.query_type());
+        
         if query.query_class() != DNSClass::IN {
+            tracing::error!("[FAKE-DNS] Unsupported DNS query class: class={:?}", query.query_class());
             return Err(anyhow!("unsupported query class {}", query.query_class()));
         }
 
         let t = query.query_type();
         if t != RecordType::A && t != RecordType::AAAA && t != RecordType::HTTPS {
+            tracing::error!("[FAKE-DNS] Unsupported DNS query type: type={:?}", query.query_type());
             return Err(anyhow!(
                 "unsupported query record type {:?}",
                 query.query_type()
@@ -119,21 +128,32 @@ impl FakeDnsImpl {
             raw_name.to_ascii()
         };
 
+        tracing::error!("[FAKE-DNS] Extracted domain from query: domain={}", domain);
+
         if !self.accept(&domain) {
+            tracing::error!("[FAKE-DNS] Domain not accepted by filter: domain={}", domain);
             return Err(anyhow!("domain {} not accepted", domain));
         }
+        
+        tracing::error!("[FAKE-DNS] Domain accepted by filter: domain={}", domain);
 
         let ip = if let Some(ip) = self.query_fake_ip(&domain) {
+            tracing::error!("[FAKE-DNS] Found existing fake IP for domain: domain={}, ip={}", domain, ip);
             match ip {
                 IpAddr::V4(a) => a,
-                _ => return Err(anyhow!("unexpected Ipv6 fake IP")),
+                _ => {
+                    tracing::error!("[FAKE-DNS] Unexpected IPv6 fake IP: domain={}, ip={}", domain, ip);
+                    return Err(anyhow!("unexpected Ipv6 fake IP"));
+                }
             }
         } else {
+            tracing::error!("[FAKE-DNS] No existing fake IP found, allocating new one: domain={}", domain);
             let ip = self.allocate_ip(&domain)?;
-            debug!("allocate {} for {}", &ip, &domain);
+            tracing::error!("[FAKE-DNS] Allocated new fake IP: domain={}, ip={}", domain, ip);
             ip
         };
 
+        tracing::error!("[FAKE-DNS] Creating DNS response: domain={}, ip={}", domain, ip);
         let mut resp = Message::new();
 
         // sets the response according to request
@@ -152,6 +172,7 @@ impl FakeDnsImpl {
         }
 
         if query.query_type() == RecordType::A {
+            tracing::error!("[FAKE-DNS] Adding A record to response: domain={}, ip={}, ttl={}", domain, ip, self.ttl);
             let mut ans = Record::new();
             ans.set_name(raw_name.clone())
                 .set_rr_type(RecordType::A)
@@ -161,7 +182,9 @@ impl FakeDnsImpl {
             resp.add_answer(ans);
         }
 
-        Ok(resp.to_vec()?)
+        let response_bytes = resp.to_vec()?;
+        tracing::error!("[FAKE-DNS] DNS response created successfully: domain={}, ip={}, response_size={} bytes", domain, ip, response_bytes.len());
+        Ok(response_bytes)
     }
 
     pub(self) fn is_fake_ip(&self, ip: &IpAddr) -> bool {
