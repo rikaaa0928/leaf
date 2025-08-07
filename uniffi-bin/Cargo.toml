@@ -10,4 +10,4 @@ name = "uniffi"
 path = "uniffi.rs"
 
 [dependencies]
-uniffi = { version = "0.29.1", features = ["cli"] }
+uniffi = { version = "0.29.4", features = ["cli"] }
