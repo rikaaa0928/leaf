@@ -48,6 +48,8 @@ pub mod drop;
 pub mod failover;
 #[cfg(feature = "inbound-http")]
 pub mod http;
+#[cfg(feature = "inbound-nf")]
+pub mod nf;
 #[cfg(feature = "outbound-obfs")]
 pub mod obfs;
 #[cfg(any(feature = "inbound-quic", feature = "outbound-quic"))]
@@ -185,6 +187,10 @@ impl TcpListener {
         })
     }
 
+    pub fn io(&self) -> &tokio::net::TcpListener {
+        &self.inner
+    }
+
     pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         let (stream, addr) = self.inner.accept().await?;
         apply_socket_opts(&stream)?;
@@ -308,7 +314,8 @@ pub async fn new_udp_socket(indicator: &SocketAddr) -> io::Result<UdpSocket> {
 }
 
 fn apply_socket_opts_internal(s: SockRef) -> io::Result<()> {
-    s.set_keepalive(true)
+    s.set_keepalive(true)?;
+    s.set_nodelay(true)
 }
 
 #[cfg(unix)]
