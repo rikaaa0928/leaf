@@ -49,6 +49,8 @@ use crate::proxy::trojan;
 use crate::proxy::vmess;
 #[cfg(feature = "outbound-ws")]
 use crate::proxy::ws;
+#[cfg(feature = "outbound-rog")]
+use crate::proxy::rog;
 
 use crate::{
     app::SyncDnsClient,
@@ -253,6 +255,27 @@ impl OutboundManager {
                         port: settings.port as u16,
                         uuid: settings.uuid.clone(),
                         security: settings.security.clone(),
+                    });
+                    HandlerBuilder::default()
+                        .tag(tag.clone())
+                        .stream_handler(stream)
+                        .datagram_handler(datagram)
+                        .build()
+                }
+                #[cfg(feature = "outbound-rog")]
+                "rog" => {
+                    let settings =
+                        config::RogOutboundSettings::parse_from_bytes(&outbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                    let stream = Box::new(rog::outbound::StreamHandler {
+                        address: settings.address.clone(),
+                        port: settings.port as u16,
+                        password: settings.password.clone(),
+                    });
+                    let datagram = Box::new(rog::outbound::DatagramHandler {
+                        address: settings.address,
+                        port: settings.port as u16,
+                        password: settings.password,
                     });
                     HandlerBuilder::default()
                         .tag(tag.clone())

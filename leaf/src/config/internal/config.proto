@@ -175,6 +175,12 @@ message VMessOutboundSettings {
     string security = 4;
 }
 
+message RogOutboundSettings {
+    string address = 1;
+    uint32 port = 2;
+    string password = 3;
+}
+
 message ChainOutboundSettings {
 	repeated string actors = 1;
 }

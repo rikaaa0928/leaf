@@ -3232,6 +3232,122 @@ impl ::protobuf::Message for VMessOutboundSettings {
     }
 }
 
+// @@protoc_insertion_point(message:RogOutboundSettings)
+#[derive(PartialEq,Clone,Default,Debug)]
+pub struct RogOutboundSettings {
+    // message fields
+    // @@protoc_insertion_point(field:RogOutboundSettings.address)
+    pub address: ::std::string::String,
+    // @@protoc_insertion_point(field:RogOutboundSettings.port)
+    pub port: u32,
+    // @@protoc_insertion_point(field:RogOutboundSettings.password)
+    pub password: ::std::string::String,
+    // special fields
+    // @@protoc_insertion_point(special_field:RogOutboundSettings.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a RogOutboundSettings {
+    fn default() -> &'a RogOutboundSettings {
+        <RogOutboundSettings as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl RogOutboundSettings {
+    pub fn new() -> RogOutboundSettings {
+        ::std::default::Default::default()
+    }
+}
+
+impl ::protobuf::Message for RogOutboundSettings {
+    const NAME: &'static str = "RogOutboundSettings";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.address = is.read_string()?;
+                },
+                16 => {
+                    self.port = is.read_uint32()?;
+                },
+                26 => {
+                    self.password = is.read_string()?;
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if !self.address.is_empty() {
+            my_size += ::protobuf::rt::string_size(1, &self.address);
+        }
+        if self.port != 0 {
+            my_size += ::protobuf::rt::uint32_size(2, self.port);
+        }
+        if !self.password.is_empty() {
+            my_size += ::protobuf::rt::string_size(3, &self.password);
+        }
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if !self.address.is_empty() {
+            os.write_string(1, &self.address)?;
+        }
+        if self.port != 0 {
+            os.write_uint32(2, self.port)?;
+        }
+        if !self.password.is_empty() {
+            os.write_string(3, &self.password)?;
+        }
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> RogOutboundSettings {
+        RogOutboundSettings::new()
+    }
+
+    fn clear(&mut self) {
+        self.address.clear();
+        self.port = 0;
+        self.password.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static RogOutboundSettings {
+        static instance: RogOutboundSettings = RogOutboundSettings {
+            address: ::std::string::String::new(),
+            port: 0,
+            password: ::std::string::String::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
 // @@protoc_insertion_point(message:ChainOutboundSettings)
 #[derive(PartialEq,Clone,Default,Debug)]
 pub struct ChainOutboundSettings {

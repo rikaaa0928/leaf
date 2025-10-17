@@ -83,7 +83,7 @@ jobs:
           rust-version: stable
 
       - name: install llvm
-        if: ${{ matrix.os == 'macos-latest' }}
+#        if: ${{ matrix.os == 'macos-latest' }}
         run: |
           brew install llvm protobuf
 
@@ -147,6 +147,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+      - name: install deps
+        run: |
+          sudo apt update && sudo apt install llvm-dev libclang-dev clang libssl-dev pkg-config protobuf-compiler make -y
 
       - name: install rust
         uses: hecrj/setup-rust-action@v1

@@ -76,6 +76,8 @@ pub mod tun;
 pub mod vmess;
 #[cfg(any(feature = "inbound-ws", feature = "outbound-ws"))]
 pub mod ws;
+#[cfg(feature = "outbound-rog")]
+pub mod rog;
 
 pub use datagram::*;
 

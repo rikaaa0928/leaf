@@ -6,19 +6,50 @@ use std::{
 
 fn generate_mobile_bindings() {
     println!("cargo:rerun-if-changed=src/mobile/wrapper.h");
-    let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let bindings = bindgen::Builder::default()
+
+    let mut builder = bindgen::Builder::default()
         .header("src/mobile/wrapper.h")
         .clang_arg("-Wno-everything")
-        .layout_tests(false)
-        .clang_arg(if arch == "aarch64" && os == "ios" {
-            // https://github.com/rust-lang/rust-bindgen/issues/1211
-            "--target=arm64-apple-ios"
+        .layout_tests(false);
+
+    if os == "android" {
+        if let Ok(ndk_home) = env::var("NDK_HOME") {
+            let host_os = env::consts::OS;
+            let host_tag = match host_os {
+                "macos" => "darwin-x86_64",
+                "linux" => "linux-x86_64",
+                "windows" => "windows-x86_64",
+                _ => panic!("unsupported host os for android build!"),
+            };
+            let include_path = PathBuf::from(&ndk_home)
+                .join("toolchains")
+                .join("llvm")
+                .join("prebuilt")
+                .join(host_tag)
+                .join("sysroot")
+                .join("usr")
+                .join("include");
+            builder = builder.clang_arg(format!("-I{}", include_path.to_string_lossy()));
+
+            // Also add the target-specific include path, e.g. for aarch64-linux-android
+            let target = env::var("TARGET").unwrap();
+            let target_include_path = include_path.join(&target);
+            if target_include_path.exists() {
+                builder = builder.clang_arg(format!("-I{}", target_include_path.to_string_lossy()));
+            }
+
+            // Set the target for clang
+            builder = builder.clang_arg(format!("--target={}", target));
         } else {
-            ""
-        })
-        .clang_arg(if arch == "aarch64" && os == "ios" {
+            panic!("NDK_HOME is not set for android build!");
+        }
+    } else if os == "ios" {
+        let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+        if arch == "aarch64" {
+            // https://github.com/rust-lang/rust-bindgen/issues/1211
+            builder = builder.clang_arg("--target=arm64-apple-ios");
             // sdk path find by `xcrun --sdk iphoneos --show-sdk-path`
             let output = Command::new("xcrun")
                 .arg("--sdk")
@@ -28,10 +59,14 @@ fn generate_mobile_bindings() {
                 .expect("failed to execute xcrun");
             let inc_path =
                 Path::new(String::from_utf8_lossy(&output.stdout).trim()).join("usr/include");
-            format!("-I{}", inc_path.to_str().expect("invalid include path"))
-        } else {
-            "".to_string()
-        })
+            builder = builder.clang_arg(format!(
+                "-I{}",
+                inc_path.to_str().expect("invalid include path")
+            ));
+        }
+    }
+
+    let bindings = builder
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");
@@ -89,5 +124,12 @@ fn main() {
             )
             .run()
             .expect("Protobuf code gen failed");
+    }
+
+    // ROG protobuf generation
+    if std::env::var("CARGO_FEATURE_OUTBOUND_ROG").is_ok() {
+        if std::path::Path::new("src/proxy/rog/proto/rog.proto").exists() {
+            tonic_prost_build::compile_protos("src/proxy/rog/proto/rog.proto");
+        }
     }
 }
