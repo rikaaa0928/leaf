@@ -117,7 +117,7 @@ outbound-amux = ["tokio-util"]
 outbound-quic = ["quinn", "rustls", "webpki-roots-old", "rustls-pemfile-old"]
 outbound-select = ["directories", "axum/query"]
 outbound-vmess = ["lz_fnv", "cfb-mode", "hmac", "aes", "sha3", "digest", "uuid", "md-5", "tokio-util", "byteorder"]
-outbound-rog = ["tonic", "prost", "tokio-stream"]
+outbound-rog = ["tonic", "prost", "tokio-stream", "tonic-prost"]
 
 # Inbounds
 inbound-trojan = ["sha2", "hex"]
@@ -244,8 +244,9 @@ lru_time_cache = { version = "0.11", optional = true }
 tokio-util = { version = "0.7", default-features = false, features = ["io"], optional = true }
 
 # ROG
-tonic = { version = "0.13.1", features = ["tls-ring", "tls-webpki-roots"], optional = true }
-prost = { version = "0.13.5", optional = true }
+tonic = { version = "0.14.2", features = ["tls-ring", "tls-webpki-roots"], optional = true }
+prost = { version = "0.14.1", optional = true }
+tonic-prost = { version = "0.14.2", optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
 
 # QUIC
@@ -259,7 +260,7 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 notify = { version = "6", optional = true }
 
 # TUN
-tun = { version = "0.7", features = ["async"], optional = true  }
+tun = { version = "0.7", features = ["async"], optional = true }
 netstack-lwip = { git = "https://github.com/eycorsican/netstack-lwip", rev = "4cc3162", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -285,4 +286,4 @@ tokio = { version = "1", features = ["fs", "sync", "io-util", "net", "time", "rt
 cc = "1.0"
 bindgen = "0.69"
 protobuf-codegen = "=3.6.0"
-tonic-build = "0.13.1"
+tonic-prost-build = "0.14.2"
