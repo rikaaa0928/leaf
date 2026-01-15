@@ -30,16 +30,24 @@ impl Tag for Handler {
     }
 }
 
+impl Color for Handler {
+    fn color(&self) -> &colored::Color {
+        &colored::Color::White
+    }
+}
+
+impl BaseHandler for Handler {}
+
 impl InboundHandler for Handler {
     fn stream(&self) -> io::Result<&AnyInboundStreamHandler> {
         self.stream_handler
             .as_ref()
-            .ok_or(io::Error::new(io::ErrorKind::Other, "no tcp handler"))
+            .ok_or(io::Error::other("no tcp handler"))
     }
 
     fn datagram(&self) -> io::Result<&AnyInboundDatagramHandler> {
         self.datagram_handler
             .as_ref()
-            .ok_or(io::Error::new(io::ErrorKind::Other, "no udp handler"))
+            .ok_or(io::Error::other("no udp handler"))
     }
 }

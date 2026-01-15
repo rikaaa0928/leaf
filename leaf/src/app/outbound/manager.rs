@@ -1,18 +1,16 @@
 use std::{
     collections::{hash_map, HashMap},
     convert::From,
+    sync::Arc,
 };
 
 #[cfg(feature = "outbound-select")]
-use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use anyhow::{anyhow, Result};
 use futures::future::AbortHandle;
 use protobuf::Message;
 use tracing::{debug, trace};
-
-#[cfg(feature = "outbound-select")]
-use tokio::sync::RwLock;
 
 #[cfg(feature = "outbound-chain")]
 use crate::proxy::chain;
@@ -117,26 +115,26 @@ impl OutboundManager {
                 "direct" => HandlerBuilder::default()
                     .tag(tag.clone())
                     .color(colored::Color::Green)
-                    .stream_handler(Box::new(direct::StreamHandler))
-                    .datagram_handler(Box::new(direct::DatagramHandler))
+                    .stream_handler(Arc::new(direct::StreamHandler))
+                    .datagram_handler(Arc::new(direct::DatagramHandler))
                     .build(),
                 #[cfg(feature = "outbound-drop")]
                 "drop" => HandlerBuilder::default()
                     .tag(tag.clone())
                     .color(colored::Color::Red)
-                    .stream_handler(Box::new(drop::StreamHandler))
-                    .datagram_handler(Box::new(drop::DatagramHandler))
+                    .stream_handler(Arc::new(drop::StreamHandler))
+                    .datagram_handler(Arc::new(drop::DatagramHandler))
                     .build(),
                 #[cfg(feature = "outbound-redirect")]
                 "redirect" => {
                     let settings =
                         config::RedirectOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
-                    let stream = Box::new(redirect::StreamHandler {
+                    let stream = Arc::new(redirect::StreamHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                     });
-                    let datagram = Box::new(redirect::DatagramHandler {
+                    let datagram = Arc::new(redirect::DatagramHandler {
                         address: settings.address,
                         port: settings.port as u16,
                     });
@@ -151,13 +149,13 @@ impl OutboundManager {
                     let settings =
                         config::SocksOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
-                    let stream = Box::new(socks::outbound::StreamHandler {
+                    let stream = Arc::new(socks::outbound::StreamHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         username: settings.username.clone(),
                         password: settings.password.clone(),
                     });
-                    let datagram = Box::new(socks::outbound::DatagramHandler {
+                    let datagram = Arc::new(socks::outbound::DatagramHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         dns_client: dns_client.clone(),
@@ -173,14 +171,14 @@ impl OutboundManager {
                     let settings =
                         config::ShadowsocksOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
-                    let stream = Box::new(shadowsocks::outbound::StreamHandler::new(
+                    let stream = Arc::new(shadowsocks::outbound::StreamHandler::new(
                         settings.address.clone(),
                         settings.port as u16,
                         settings.method.clone(),
                         settings.password.clone(),
                         settings.prefix.as_ref().cloned(),
                     )?);
-                    let datagram = Box::new(shadowsocks::outbound::DatagramHandler {
+                    let datagram = Arc::new(shadowsocks::outbound::DatagramHandler {
                         address: settings.address,
                         port: settings.port as u16,
                         cipher: settings.method,
@@ -198,12 +196,12 @@ impl OutboundManager {
                         config::ObfsOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
                     let stream = match &*settings.method {
-                        "http" => Box::new(obfs::HttpObfsStreamHandler::new(
+                        "http" => Arc::new(obfs::HttpObfsStreamHandler::new(
                             settings.path.as_bytes(),
                             settings.host.as_bytes(),
                         )) as _,
                         "tls" => {
-                            Box::new(obfs::TlsObfsStreamHandler::new(settings.host.as_bytes())) as _
+                            Arc::new(obfs::TlsObfsStreamHandler::new(settings.host.as_bytes())) as _
                         }
                         method => {
                             return Err(anyhow!(
@@ -223,12 +221,12 @@ impl OutboundManager {
                     let settings =
                         config::TrojanOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
-                    let stream = Box::new(trojan::outbound::StreamHandler {
+                    let stream = Arc::new(trojan::outbound::StreamHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         password: settings.password.clone(),
                     });
-                    let datagram = Box::new(trojan::outbound::DatagramHandler {
+                    let datagram = Arc::new(trojan::outbound::DatagramHandler {
                         address: settings.address,
                         port: settings.port as u16,
                         password: settings.password,
@@ -244,13 +242,13 @@ impl OutboundManager {
                     let settings =
                         config::VMessOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
-                    let stream = Box::new(vmess::outbound::StreamHandler {
+                    let stream = Arc::new(vmess::outbound::StreamHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         uuid: settings.uuid.clone(),
                         security: settings.security.clone(),
                     });
-                    let datagram = Box::new(vmess::outbound::DatagramHandler {
+                    let datagram = Arc::new(vmess::outbound::DatagramHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         uuid: settings.uuid.clone(),
@@ -293,7 +291,7 @@ impl OutboundManager {
                     } else {
                         Some(settings.certificate.clone())
                     };
-                    let stream = Box::new(tls::outbound::StreamHandler::new(
+                    let stream = Arc::new(tls::outbound::StreamHandler::new(
                         settings.server_name.clone(),
                         settings.alpn.clone(),
                         certificate,
@@ -309,7 +307,7 @@ impl OutboundManager {
                     let settings =
                         config::WebSocketOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
-                    let stream = Box::new(ws::outbound::StreamHandler {
+                    let stream = Arc::new(ws::outbound::StreamHandler {
                         path: settings.path.clone(),
                         headers: settings.headers.clone(),
                     });
@@ -333,7 +331,7 @@ impl OutboundManager {
                     } else {
                         Some(settings.certificate.clone())
                     };
-                    let stream = Box::new(quic::outbound::StreamHandler::new(
+                    let stream = Arc::new(quic::outbound::StreamHandler::new(
                         settings.address.clone(),
                         settings.port as u16,
                         server_name,
@@ -386,12 +384,12 @@ impl OutboundManager {
                         if actors.is_empty() {
                             continue;
                         }
-                        let stream = Box::new(tryall::StreamHandler {
+                        let stream = Arc::new(tryall::StreamHandler {
                             actors: actors.clone(),
                             delay_base: settings.delay_base,
                             dns_client: dns_client.clone(),
                         });
-                        let datagram = Box::new(tryall::DatagramHandler {
+                        let datagram = Arc::new(tryall::DatagramHandler {
                             actors,
                             delay_base: settings.delay_base,
                             dns_client: dns_client.clone(),
@@ -426,12 +424,12 @@ impl OutboundManager {
                         if actors.is_empty() {
                             continue;
                         }
-                        let stream = Box::new(r#static::StreamHandler::new(
+                        let stream = Arc::new(r#static::StreamHandler::new(
                             actors.clone(),
                             &settings.method,
                         )?);
                         let datagram =
-                            Box::new(r#static::DatagramHandler::new(actors, &settings.method)?);
+                            Arc::new(r#static::DatagramHandler::new(actors, &settings.method)?);
                         let handler = HandlerBuilder::default()
                             .tag(tag.clone())
                             .stream_handler(stream)
@@ -507,8 +505,8 @@ impl OutboundManager {
                         );
                         let handler = HandlerBuilder::default()
                             .tag(tag.clone())
-                            .stream_handler(Box::new(stream))
-                            .datagram_handler(Box::new(datagram))
+                            .stream_handler(Arc::new(stream))
+                            .datagram_handler(Arc::new(datagram))
                             .build();
                         handlers.insert(tag.clone(), handler);
                         abort_handles.append(&mut stream_abort_handles);
@@ -546,7 +544,7 @@ impl OutboundManager {
                         );
                         let handler = HandlerBuilder::default()
                             .tag(tag.clone())
-                            .stream_handler(Box::new(stream))
+                            .stream_handler(Arc::new(stream))
                             .build();
                         handlers.insert(tag.clone(), handler);
                         abort_handles.append(&mut stream_abort_handles);
@@ -574,10 +572,10 @@ impl OutboundManager {
                         if actors.is_empty() {
                             continue;
                         }
-                        let stream = Box::new(chain::outbound::StreamHandler {
+                        let stream = Arc::new(chain::outbound::StreamHandler {
                             actors: actors.clone(),
                         });
-                        let datagram = Box::new(chain::outbound::DatagramHandler {
+                        let datagram = Arc::new(chain::outbound::DatagramHandler {
                             actors: actors.clone(),
                         });
                         let handler = HandlerBuilder::default()
@@ -604,11 +602,11 @@ impl OutboundManager {
                                 .new_handler(settings.path, &tag, &settings.args)
                                 .unwrap()
                         };
-                        let stream = Box::new(super::plugin::ExternalOutboundStreamHandlerProxy(
+                        let stream = Arc::new(super::plugin::ExternalOutboundStreamHandlerProxy(
                             external_handlers.get_stream_handler(&tag).unwrap(),
                         ));
                         let datagram =
-                            Box::new(super::plugin::ExternalOutboundDatagramHandlerProxy(
+                            Arc::new(super::plugin::ExternalOutboundDatagramHandlerProxy(
                                 external_handlers.get_datagram_handler(&tag).unwrap(),
                             ));
                         let handler = HandlerBuilder::default()
@@ -686,11 +684,11 @@ impl OutboundManager {
                         }
                         let selector = Arc::new(RwLock::new(selector));
 
-                        let stream = Box::new(select::StreamHandler {
+                        let stream = Arc::new(select::StreamHandler {
                             actors: actors.clone(),
                             selected: selected.clone(),
                         });
-                        let datagram = Box::new(select::DatagramHandler { actors, selected });
+                        let datagram = Arc::new(select::DatagramHandler { actors, selected });
 
                         #[cfg(feature = "outbound-select")]
                         {
@@ -725,12 +723,13 @@ impl OutboundManager {
     ) -> Result<()> {
         // Save outound select states.
         #[cfg(feature = "outbound-select")]
-        {
-            let mut selected_outbounds = HashMap::new();
+        let selected_outbounds: HashMap<String, String> = {
+            let mut m = HashMap::new();
             for (k, v) in self.selectors.iter() {
-                selected_outbounds.insert(k.to_owned(), v.read().await.get_selected_tag());
+                m.insert(k.to_owned(), v.read().await.get_selected_tag());
             }
-        }
+            m
+        };
 
         // Load new outbounds.
         let mut handlers: HashMap<String, AnyOutboundHandler> = HashMap::new();
@@ -823,6 +822,7 @@ impl OutboundManager {
                 &mut selectors,
             )?;
         }
+
         Ok(OutboundManager {
             handlers,
             #[cfg(feature = "plugin")]
@@ -847,7 +847,7 @@ impl OutboundManager {
         self.default_handler.clone()
     }
 
-    pub fn handlers(&self) -> Handlers {
+    pub fn handlers(&self) -> Handlers<'_> {
         Handlers {
             inner: self.handlers.values(),
         }

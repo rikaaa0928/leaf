@@ -71,17 +71,12 @@ impl OutboundStreamHandler for Handler {
                 ..Default::default()
             };
             let (socket, _) = client_async_with_config(req, stream, Some(ws_config))
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("connect ws {} failed: {}", &url, e),
-                    )
-                })
+                .map_err(|e| io::Error::other(format!("connect ws {} failed: {}", &url, e)))
                 .await?;
             let ws_stream = super::ws_stream::WebSocketToStream::new(socket);
             Ok(Box::new(ws_stream))
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "invalid input"))
+            Err(io::Error::other("invalid input"))
         }
     }
 }

@@ -20,7 +20,7 @@ const EOL: [u8; 2] = [13, 10];
 const EOH: [u8; 4] = [13, 10, 13, 10];
 
 fn bad_request() -> io::Error {
-    io::Error::new(io::ErrorKind::Other, "bad request")
+    io::Error::other("bad request")
 }
 
 fn split_slice_once(s: &[u8], sep: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
@@ -162,6 +162,12 @@ impl HttpStream {
 
         match head.target_format {
             TargetFormat::Absolute => {
+                // drain() returns (before EOH, starting at EOH). To avoid duplicating
+                // the CRLFCRLF boundary when we rebuild headers below, drop the
+                // leading EOH from the remainder.
+                if rest_buf.starts_with(&EOH) {
+                    let _ = rest_buf.drain(..EOH.len());
+                }
                 let path_and_query = head
                     .uri
                     .path_and_query()

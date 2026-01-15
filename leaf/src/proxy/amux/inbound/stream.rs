@@ -58,10 +58,7 @@ impl InboundStreamHandler for Handler {
                     sess = new_sess;
                 }
                 _ => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "invalid amux transport",
-                    ));
+                    return Err(io::Error::other("invalid amux transport"));
                 }
             }
         }

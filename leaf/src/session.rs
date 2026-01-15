@@ -65,6 +65,8 @@ impl std::fmt::Display for DatagramSource {
 }
 
 pub struct Session {
+    /// Unique identifier for the session.
+    pub trace_id: String,
     /// The network type, representing either TCP or UDP.
     pub network: Network,
     /// The socket address of the remote peer of an inbound connection.
@@ -91,6 +93,7 @@ pub struct Session {
 impl Clone for Session {
     fn clone(&self) -> Self {
         Session {
+            trace_id: self.trace_id.clone(),
             network: self.network,
             source: self.source,
             local_addr: self.local_addr,
@@ -107,7 +110,17 @@ impl Clone for Session {
 
 impl Default for Session {
     fn default() -> Self {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let trace_id: String = (0..8)
+            .map(|_| {
+                const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+                let idx = rng.gen_range(0..CHARS.len());
+                CHARS[idx] as char
+            })
+            .collect();
         Session {
+            trace_id,
             network: Network::Tcp,
             source: *crate::option::UNSPECIFIED_BIND_ADDR,
             local_addr: *crate::option::UNSPECIFIED_BIND_ADDR,
@@ -119,6 +132,12 @@ impl Default for Session {
             process_name: None,
             new_conn_once: false,
         }
+    }
+}
+
+impl Session {
+    pub fn create_span(&self) -> tracing::Span {
+        tracing::info_span!("session", trace_id = self.trace_id)
     }
 }
 
@@ -150,15 +169,15 @@ pub enum SocksAddr {
 }
 
 fn insuff_bytes() -> io::Error {
-    io::Error::new(io::ErrorKind::Other, "insufficient bytes")
+    io::Error::other("insufficient bytes")
 }
 
 fn invalid_domain() -> io::Error {
-    io::Error::new(io::ErrorKind::Other, "invalid domain")
+    io::Error::other("invalid domain")
 }
 
 fn invalid_addr_type() -> io::Error {
-    io::Error::new(io::ErrorKind::Other, "invalid address type")
+    io::Error::other("invalid address type")
 }
 
 impl SocksAddr {
@@ -417,7 +436,7 @@ impl TryFrom<(String, u16)> for SocksAddr {
             return Ok(Self::from((ip, port)));
         }
         if addr.len() > 0xff {
-            return Err(io::Error::new(io::ErrorKind::Other, "domain too long"));
+            return Err(io::Error::other("domain too long"));
         }
         Ok(Self::Domain(addr, port))
     }
@@ -466,16 +485,14 @@ impl TryFrom<(&[u8], SocksAddrWireType)> for SocksAddr {
                     if buf.len() < 1 + domain_len + 2 {
                         return Err(insuff_bytes());
                     }
-                    let domain =
-                        String::from_utf8(buf[2..domain_len + 2].to_vec()).map_err(|e| {
-                            io::Error::new(io::ErrorKind::Other, format!("invalid domain: {}", e))
-                        })?;
+                    let domain = String::from_utf8(buf[2..domain_len + 2].to_vec())
+                        .map_err(|e| io::Error::other(format!("invalid domain: {}", e)))?;
                     let mut port_bytes = [0u8; 2];
                     port_bytes.copy_from_slice(&buf[domain_len + 2..domain_len + 4]);
                     let port = u16::from_be_bytes(port_bytes);
                     Ok(Self::Domain(domain, port))
                 }
-                _ => Err(io::Error::new(io::ErrorKind::Other, "invalid address type")),
+                _ => Err(io::Error::other("invalid address type")),
             },
             SocksAddrWireType::PortFirst => match buf[0] {
                 SocksAddrPortFirstType::V4 => {
@@ -514,12 +531,11 @@ impl TryFrom<(&[u8], SocksAddrWireType)> for SocksAddr {
                     if buf.len() < domain_len {
                         return Err(insuff_bytes());
                     }
-                    let domain = String::from_utf8(buf[..domain_len].to_vec()).map_err(|e| {
-                        io::Error::new(io::ErrorKind::Other, format!("invalid domain: {}", e))
-                    })?;
+                    let domain = String::from_utf8(buf[..domain_len].to_vec())
+                        .map_err(|e| io::Error::other(format!("invalid domain: {}", e)))?;
                     Ok(Self::Domain(domain, port))
                 }
-                _ => Err(io::Error::new(io::ErrorKind::Other, "invalid address type")),
+                _ => Err(io::Error::other("invalid address type")),
             },
         }
     }

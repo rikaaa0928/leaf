@@ -46,25 +46,17 @@ pub struct ShadowedStream<T> {
 
 impl<T> ShadowedStream<T> {
     pub fn new(s: T, cipher: &str, password: &str, prefix: Option<Box<[u8]>>) -> io::Result<Self> {
-        let cipher = AeadCipher::new(cipher).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("create AEAD cipher failed: {}", e),
-            )
-        })?;
-        let psk = kdf(password, cipher.key_len()).map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("derive key failed: {}", e))
-        })?;
+        let cipher = AeadCipher::new(cipher)
+            .map_err(|e| io::Error::other(format!("create AEAD cipher failed: {}", e)))?;
+        let psk = kdf(password, cipher.key_len())
+            .map_err(|e| io::Error::other(format!("derive key failed: {}", e)))?;
         if let Some(prefix) = prefix.as_ref() {
             if prefix.len() > cipher.key_len() {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "prefix length exceeding cipher key length: {} > {}",
-                        prefix.len(),
-                        cipher.key_len()
-                    ),
-                ));
+                return Err(io::Error::other(format!(
+                    "prefix length exceeding cipher key length: {} > {}",
+                    prefix.len(),
+                    cipher.key_len()
+                )));
             }
         }
         Ok(ShadowedStream {
@@ -125,7 +117,7 @@ where
 }
 
 pub fn crypto_err() -> io::Error {
-    io::Error::new(io::ErrorKind::Other, "crypto error")
+    io::Error::other("crypto error")
 }
 
 impl<T> AsyncRead for ShadowedStream<T>
@@ -324,7 +316,7 @@ where
 }
 
 fn short_packet() -> io::Error {
-    io::Error::new(io::ErrorKind::Other, "short packet")
+    io::Error::other("short packet")
 }
 
 pub struct ShadowedDatagram {
@@ -334,15 +326,10 @@ pub struct ShadowedDatagram {
 
 impl ShadowedDatagram {
     pub fn new(cipher: &str, password: &str) -> io::Result<Self> {
-        let cipher = AeadCipher::new(cipher).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("create AEAD cipher failed: {}", e),
-            )
-        })?;
-        let psk = kdf(password, cipher.key_len()).map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("derive key failed: {}", e))
-        })?;
+        let cipher = AeadCipher::new(cipher)
+            .map_err(|e| io::Error::other(format!("create AEAD cipher failed: {}", e)))?;
+        let psk = kdf(password, cipher.key_len())
+            .map_err(|e| io::Error::other(format!("derive key failed: {}", e)))?;
         Ok(ShadowedDatagram { cipher, psk })
     }
 

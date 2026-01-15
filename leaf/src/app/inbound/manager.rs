@@ -13,9 +13,11 @@ use crate::Runner;
 
 #[cfg(feature = "inbound-amux")]
 use crate::proxy::amux;
+#[cfg(feature = "inbound-hc")]
+use crate::proxy::hc;
 #[cfg(feature = "inbound-http")]
 use crate::proxy::http;
-#[cfg(feature = "inbound-nf")]
+#[cfg(all(feature = "inbound-nf", windows))]
 use crate::proxy::nf;
 #[cfg(feature = "inbound-quic")]
 use crate::proxy::quic;
@@ -82,7 +84,24 @@ impl InboundManager {
                     ));
                     handlers.insert(tag.clone(), handler);
                 }
-                #[cfg(feature = "inbound-nf")]
+                #[cfg(feature = "inbound-hc")]
+                "hc" => {
+                    let settings =
+                        config::HcInboundSettings::parse_from_bytes(&inbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] inbound settings: {}", &tag, e))?;
+                    let stream = Arc::new(hc::inbound::Handler::new(
+                        settings.path,
+                        settings.request,
+                        settings.response,
+                    ));
+                    let handler = Arc::new(proxy::inbound::Handler::new(
+                        tag.clone(),
+                        Some(stream),
+                        None,
+                    ));
+                    handlers.insert(tag.clone(), handler);
+                }
+                #[cfg(all(feature = "inbound-nf", windows))]
                 "nf" => {
                     let settings: crate::config::NfInboundSettings =
                         protobuf::Message::parse_from_bytes(&inbound.settings)?;
@@ -134,7 +153,8 @@ impl InboundManager {
                 #[cfg(feature = "inbound-trojan")]
                 "trojan" => {
                     let settings =
-                        config::TrojanInboundSettings::parse_from_bytes(&inbound.settings)?;
+                        config::TrojanInboundSettings::parse_from_bytes(&inbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] inbound settings: {}", &tag, e))?;
                     let stream = Arc::new(trojan::inbound::StreamHandler::new(
                         settings.passwords.to_vec(),
                     ));
@@ -148,7 +168,8 @@ impl InboundManager {
                 #[cfg(feature = "inbound-ws")]
                 "ws" => {
                     let settings =
-                        config::WebSocketInboundSettings::parse_from_bytes(&inbound.settings)?;
+                        config::WebSocketInboundSettings::parse_from_bytes(&inbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] inbound settings: {}", &tag, e))?;
                     let stream = Arc::new(ws::inbound::StreamHandler::new(settings.path.clone()));
                     let handler = Arc::new(proxy::inbound::Handler::new(
                         tag.clone(),
@@ -159,8 +180,8 @@ impl InboundManager {
                 }
                 #[cfg(feature = "inbound-quic")]
                 "quic" => {
-                    let settings =
-                        config::QuicInboundSettings::parse_from_bytes(&inbound.settings)?;
+                    let settings = config::QuicInboundSettings::parse_from_bytes(&inbound.settings)
+                        .map_err(|e| anyhow!("invalid [{}] inbound settings: {}", &tag, e))?;
                     let datagram = Arc::new(quic::inbound::DatagramHandler::new(
                         settings.certificate.clone(),
                         settings.certificate_key.clone(),
@@ -175,7 +196,8 @@ impl InboundManager {
                 }
                 #[cfg(feature = "inbound-tls")]
                 "tls" => {
-                    let settings = config::TlsInboundSettings::parse_from_bytes(&inbound.settings)?;
+                    let settings = config::TlsInboundSettings::parse_from_bytes(&inbound.settings)
+                        .map_err(|e| anyhow!("invalid [{}] inbound settings: {}", &tag, e))?;
                     let stream = Arc::new(tls::inbound::StreamHandler::new(
                         settings.certificate.clone(),
                         settings.certificate_key.clone(),
@@ -326,19 +348,13 @@ impl InboundManager {
     }
 
     #[cfg(feature = "inbound-tun")]
-    pub fn get_tun_runner(&self) -> Result<Runner> {
-        if let Some(listener) = &self.tun_listener {
-            return listener.listen();
-        }
-        Err(anyhow!("no tun inbound"))
+    pub fn get_tun_runner(&self) -> Option<Result<Runner>> {
+        self.tun_listener.as_ref().map(TunInboundListener::listen)
     }
 
     #[cfg(feature = "inbound-cat")]
-    pub fn get_cat_runner(&self) -> Result<Runner> {
-        if let Some(listener) = &self.cat_listener {
-            return listener.listen();
-        }
-        Err(anyhow!("no cat inbound"))
+    pub fn get_cat_runner(&self) -> Option<Result<Runner>> {
+        self.cat_listener.as_ref().map(CatInboundListener::listen)
     }
 
     #[cfg(feature = "inbound-tun")]

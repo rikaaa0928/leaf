@@ -7,17 +7,17 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use futures::future::select_ok;
-use lru::LruCache;
-use rand::{rngs::StdRng, Rng, SeedableRng};
-use tokio::sync::Mutex as TokioMutex;
-use tokio::time::timeout;
-use tracing::{debug, trace};
-use trust_dns_proto::{
+use hickory_proto::{
     op::{
         header::MessageType, op_code::OpCode, query::Query, response_code::ResponseCode, Message,
     },
     rr::{record_data::RData, record_type::RecordType, Name},
 };
+use lru::LruCache;
+use rand::{rngs::StdRng, Rng, SeedableRng};
+use tokio::sync::Mutex as TokioMutex;
+use tokio::time::timeout;
+use tracing::{debug, trace, Instrument};
 
 use crate::{app::dispatcher::Dispatcher, option, proxy::*, session::*};
 
@@ -176,10 +176,13 @@ impl DnsClient {
         host: &str,
         server: &SocketAddr,
     ) -> Result<CacheEntry> {
-        let socket = if is_direct {
+        let (socket, span) = if is_direct {
             debug!("direct lookup");
             let socket = self.new_udp_socket(server).await?;
-            Box::new(StdOutboundDatagram::new(socket))
+            (
+                Box::new(StdOutboundDatagram::new(socket)) as Box<dyn OutboundDatagram>,
+                tracing::Span::current(),
+            )
         } else {
             debug!("dispatched lookup");
             if let Some(dispatcher_weak) = self.dispatcher.as_ref() {
@@ -196,8 +199,9 @@ impl DnsClient {
                     inbound_tag: "internal".to_string(),
                     ..Default::default()
                 };
+                let span = sess.create_span();
                 if let Some(dispatcher) = dispatcher_weak.upgrade() {
-                    dispatcher.dispatch_datagram(sess).await?
+                    (dispatcher.dispatch_datagram(sess).await?, span)
                 } else {
                     return Err(anyhow!("dispatcher is deallocated"));
                 }
@@ -205,103 +209,119 @@ impl DnsClient {
                 return Err(anyhow!("could not find a dispatcher"));
             }
         };
-        let (mut r, mut s) = socket.split();
-        let server = SocksAddr::from(server);
-        let mut last_err = None;
-        for _i in 0..*option::MAX_DNS_RETRIES {
-            debug!("looking up host {} on {}", host, server);
-            let start = tokio::time::Instant::now();
-            match s.send_to(&request, &server).await {
-                Ok(_) => {
-                    let mut buf = vec![0u8; 512];
-                    match timeout(
-                        Duration::from_secs(*option::DNS_TIMEOUT),
-                        r.recv_from(&mut buf),
-                    )
-                    .await
-                    {
-                        Ok(res) => match res {
-                            Ok((n, _)) => {
-                                let resp = match Message::from_vec(&buf[..n]) {
-                                    Ok(resp) => resp,
-                                    Err(err) => {
-                                        last_err = Some(anyhow!("parse message failed: {:?}", err));
-                                        // broken response, no retry
-                                        break;
-                                    }
-                                };
-                                if resp.response_code() != ResponseCode::NoError {
-                                    last_err =
-                                        Some(anyhow!("response error {}", resp.response_code()));
-                                    // error response, no retry
-                                    //
-                                    // TODO Needs more careful investigations, I'm not quite sure about
-                                    // this.
-                                    break;
-                                }
-                                let mut ips = Vec::new();
-                                for ans in resp.answers() {
-                                    // TODO checks?
-                                    if let Some(data) = ans.data() {
-                                        match data {
-                                            RData::A(ip) => {
-                                                ips.push(IpAddr::V4(**ip));
-                                            }
-                                            RData::AAAA(ip) => {
-                                                ips.push(IpAddr::V6(**ip));
-                                            }
-                                            _ => (),
-                                        }
-                                    }
-                                }
-                                if !ips.is_empty() {
-                                    let elapsed = tokio::time::Instant::now().duration_since(start);
-                                    let ttl = resp.answers().iter().next().unwrap().ttl();
-                                    debug!(
-                                        "return {} ips (ttl {}) for {} from {} in {}ms",
-                                        ips.len(),
-                                        ttl,
-                                        host,
-                                        server,
-                                        elapsed.as_millis(),
-                                    );
-                                    let deadline = if let Some(d) =
-                                        Instant::now().checked_add(Duration::from_secs(ttl.into()))
-                                    {
-                                        d
-                                    } else {
-                                        last_err = Some(anyhow!("invalid ttl"));
-                                        break;
-                                    };
-                                    let entry = CacheEntry { ips, deadline };
-                                    debug!("ips for {}: {:#?}", host, &entry);
-                                    return Ok(entry);
-                                } else {
-                                    // response with 0 records
-                                    //
-                                    // TODO Not sure how to due with this.
-                                    last_err = Some(anyhow!("no records"));
-                                    break;
-                                }
+
+        async move {
+            let (mut r, mut s) = socket.split();
+            let server = SocksAddr::from(server);
+            let mut last_err = None;
+            for _i in 0..*option::MAX_DNS_RETRIES {
+                debug!("looking up host {} on {}", host, server);
+                let start = tokio::time::Instant::now();
+                // 1) send DNS request
+                if let Err(err) = s.send_to(&request, &server).await {
+                    last_err = Some(anyhow!("send DNS request to {} failed: {}", server, err));
+                    // socket send_to error, retry
+                    continue;
+                }
+                // 2) wait response
+                let mut buf = vec![0u8; 512];
+                let recv_result = match timeout(
+                    Duration::from_secs(*option::DNS_TIMEOUT),
+                    r.recv_from(&mut buf),
+                )
+                .await
+                {
+                    Ok(Ok((n, _))) => Ok((n, ())),
+                    Ok(Err(err)) => {
+                        Err(anyhow!("recv DNS response from {} failed: {}", server, err))
+                    } // socket recv_from error
+                    Err(e) => Err(anyhow!("recv DNS response from {} timeout: {}", server, e)), // timeout
+                };
+                // retry
+                if let Err(err) = recv_result {
+                    last_err = Some(err);
+                    continue;
+                }
+                // happy path !!
+                let n: usize = recv_result.unwrap().0;
+                // 3) parse resp
+                let resp = match Message::from_vec(&buf[..n]) {
+                    Ok(resp) => resp,
+                    Err(err) => {
+                        last_err =
+                            Some(anyhow!("parse DNS message from {} failed: {}", server, err));
+                        // broken response, no retry
+                        break;
+                    }
+                };
+                // 4) check resp code
+                if resp.response_code() != ResponseCode::NoError {
+                    last_err = Some(anyhow!(
+                        "DNS response from {} for {} error: {}",
+                        server,
+                        host,
+                        resp.response_code()
+                    ));
+                    // error response, no retry
+                    //
+                    // TODO Needs more careful investigations, I'm not quite sure about
+                    // this.
+                    break;
+                }
+                // 5) find address
+                let mut ips = Vec::new();
+                for ans in resp.answers() {
+                    // TODO checks?
+                    if let Some(data) = ans.data() {
+                        match data {
+                            RData::A(ip) => {
+                                ips.push(IpAddr::V4(**ip));
                             }
-                            Err(err) => {
-                                last_err = Some(anyhow!("recv failed: {:?}", err));
-                                // socket recv_from error, retry
+                            RData::AAAA(ip) => {
+                                ips.push(IpAddr::V6(**ip));
                             }
-                        },
-                        Err(e) => {
-                            last_err = Some(anyhow!("recv timeout: {}", e));
-                            // timeout, retry
+                            _ => (),
                         }
                     }
                 }
-                Err(err) => {
-                    last_err = Some(anyhow!("send failed: {:?}", err));
-                    // socket send_to error, retry
+
+                if ips.is_empty() {
+                    // response with 0 records
+                    //
+                    // TODO Not sure how to due with this.
+                    last_err = Some(anyhow!(
+                        "no records in DNS response from {} for {}",
+                        server,
+                        host
+                    ));
+                    break;
                 }
+                // 6) return cache entry
+                let elapsed = tokio::time::Instant::now().duration_since(start);
+                let ttl = resp.answers().iter().next().unwrap().ttl();
+                debug!(
+                    "return {} ips (ttl {}) for {} from {} in {}ms",
+                    ips.len(),
+                    ttl,
+                    host,
+                    server,
+                    elapsed.as_millis(),
+                );
+
+                let Some(deadline) = Instant::now().checked_add(Duration::from_secs(ttl.into()))
+                else {
+                    last_err = Some(anyhow!("invalid ttl"));
+                    break;
+                };
+
+                let entry = CacheEntry { ips, deadline };
+                debug!("ips for {}: {:#?}", host, &entry);
+                return Ok(entry);
             }
+            Err(last_err.unwrap_or_else(|| anyhow!("all lookup attempts for {} failed", host)))
         }
-        Err(last_err.unwrap_or_else(|| anyhow!("all lookup attempts failed")))
+        .instrument(span)
+        .await
     }
 
     fn new_query(name: Name, ty: RecordType) -> Message {
@@ -329,71 +349,28 @@ impl DnsClient {
     async fn get_cached(&self, host: &String) -> Result<Vec<IpAddr>> {
         let mut cached_ips = Vec::new();
 
-        // TODO reduce boilerplates
-        match (*crate::option::ENABLE_IPV6, *crate::option::PREFER_IPV6) {
-            (true, true) => {
-                if let Some(entry) = self.ipv6_cache.lock().await.get(host) {
-                    if entry
-                        .deadline
-                        .checked_duration_since(Instant::now())
-                        .is_none()
-                    {
-                        return Err(anyhow!("entry expired"));
-                    }
-                    let mut ips = entry.ips.to_vec();
-                    cached_ips.append(&mut ips);
+        let fetch_order = match (*crate::option::ENABLE_IPV6, *crate::option::PREFER_IPV6) {
+            (true, true) => vec![&self.ipv6_cache, &self.ipv4_cache],
+            (true, false) => vec![&self.ipv4_cache, &self.ipv6_cache],
+            _ => vec![&self.ipv4_cache],
+        };
+
+        // Query caches in priority order
+        for cache in fetch_order {
+            if let Some(entry) = cache.lock().await.get(host) {
+                if entry
+                    .deadline
+                    .checked_duration_since(Instant::now())
+                    .is_none()
+                {
+                    return Err(anyhow!("entry expired"));
                 }
-                if let Some(entry) = self.ipv4_cache.lock().await.get(host) {
-                    if entry
-                        .deadline
-                        .checked_duration_since(Instant::now())
-                        .is_none()
-                    {
-                        return Err(anyhow!("entry expired"));
-                    }
-                    let mut ips = entry.ips.to_vec();
-                    cached_ips.append(&mut ips);
-                }
-            }
-            (true, false) => {
-                if let Some(entry) = self.ipv4_cache.lock().await.get(host) {
-                    if entry
-                        .deadline
-                        .checked_duration_since(Instant::now())
-                        .is_none()
-                    {
-                        return Err(anyhow!("entry expired"));
-                    }
-                    let mut ips = entry.ips.to_vec();
-                    cached_ips.append(&mut ips);
-                }
-                if let Some(entry) = self.ipv6_cache.lock().await.get(host) {
-                    if entry
-                        .deadline
-                        .checked_duration_since(Instant::now())
-                        .is_none()
-                    {
-                        return Err(anyhow!("entry expired"));
-                    }
-                    let mut ips = entry.ips.to_vec();
-                    cached_ips.append(&mut ips);
-                }
-            }
-            _ => {
-                if let Some(entry) = self.ipv4_cache.lock().await.get(host) {
-                    if entry
-                        .deadline
-                        .checked_duration_since(Instant::now())
-                        .is_none()
-                    {
-                        return Err(anyhow!("entry expired"));
-                    }
-                    let mut ips = entry.ips.to_vec();
-                    cached_ips.append(&mut ips);
-                }
+                let mut ips = entry.ips.to_vec();
+                cached_ips.append(&mut ips);
             }
         }
 
+        // Return results or error if no cached IPs found
         if !cached_ips.is_empty() {
             Ok(cached_ips)
         } else {
@@ -410,6 +387,11 @@ impl DnsClient {
     }
 
     pub async fn _lookup(&self, host: &String, is_direct: bool) -> Result<Vec<IpAddr>> {
+        let span = tracing::info_span!("dns_lookup", host = %host);
+        self._lookup_inner(host, is_direct).instrument(span).await
+    }
+
+    async fn _lookup_inner(&self, host: &String, is_direct: bool) -> Result<Vec<IpAddr>> {
         if let Ok(ip) = host.parse::<IpAddr>() {
             return Ok(vec![ip]);
         }
