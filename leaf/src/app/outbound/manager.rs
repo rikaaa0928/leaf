@@ -265,12 +265,12 @@ impl OutboundManager {
                     let settings =
                         config::RogOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
-                    let stream = Box::new(rog::outbound::StreamHandler {
+                    let stream = Arc::new(rog::outbound::StreamHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         password: settings.password.clone(),
                     });
-                    let datagram = Box::new(rog::outbound::DatagramHandler {
+                    let datagram = Arc::new(rog::outbound::DatagramHandler {
                         address: settings.address,
                         port: settings.port as u16,
                         password: settings.password,

@@ -254,6 +254,13 @@ pub struct PluginOutboundSettings {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RogOutboundSettings {
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    pub password: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Inbound {
     pub tag: Option<String>,
     pub address: Option<String>,
@@ -391,6 +398,10 @@ pub enum OutboundSettings {
     },
     Direct,
     Drop,
+    Rog {
+        #[serde(default)]
+        settings: Option<RogOutboundSettings>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -780,6 +791,26 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                 }
                 OutboundSettings::Drop => {
                     outbound.protocol = "drop".to_string();
+                    outbounds.push(outbound);
+                }
+                OutboundSettings::Rog {
+                    settings: ext_settings,
+                } => {
+                    outbound.protocol = "rog".to_string();
+                    if let Some(ext_settings) = ext_settings {
+                        let mut settings = internal::RogOutboundSettings::new();
+                        if let Some(ext_address) = &ext_settings.address {
+                            settings.address = ext_address.clone();
+                        }
+                        if let Some(ext_port) = ext_settings.port {
+                            settings.port = ext_port as u32;
+                        }
+                        if let Some(ext_password) = &ext_settings.password {
+                            settings.password = ext_password.clone();
+                        }
+                        let settings = settings.write_to_bytes().unwrap();
+                        outbound.settings = settings;
+                    }
                     outbounds.push(outbound);
                 }
                 OutboundSettings::Redirect {

@@ -1078,20 +1078,17 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                         },
                     });
                 }
-                "rog"=>{
-                    let mut settings = internal::RogOutboundSettings::new();
-                    if let Some(ext_address) = &ext_proxy.address {
-                        settings.address = ext_address.clone();
-                    }
-                    if let Some(ext_port) = &ext_proxy.port {
-                        settings.port = *ext_port as u32;
-                    }
-                    if let Some(ext_password) = &ext_proxy.password {
-                        settings.password = ext_password.clone();
-                    }
-                    let settings = settings.write_to_bytes().unwrap();
-                    outbound.settings = settings;
-                    outbounds.push(outbound);
+                "rog" => {
+                    outbounds.push(common::Outbound {
+                        tag: Some(ext_proxy.tag.clone()),
+                        settings: common::OutboundSettings::Rog {
+                            settings: Some(common::RogOutboundSettings {
+                                address: ext_proxy.address.clone(),
+                                port: ext_proxy.port,
+                                password: ext_proxy.password.clone(),
+                            }),
+                        },
+                    });
                 }
                 _ => {}
             }
