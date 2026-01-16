@@ -1,6 +1,8 @@
 uniffi::setup_scaffolding!();
+#[cfg(not(target_os = "windows"))]
 use mimalloc::MiMalloc;
 
+#[cfg(not(target_os = "windows"))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 

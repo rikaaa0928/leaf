@@ -12,8 +12,11 @@ path = "src/main.rs"
 [dependencies]
 tokio = { version = "1", features = ["rt"] }
 argh = "0.1"
-mimalloc = { version = "0.1", default-features = false }
 
+
+
+[target.'cfg(not(windows))'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
 
 [target.'cfg(not(windows))'.dependencies.leaf]
 path = "../leaf"
