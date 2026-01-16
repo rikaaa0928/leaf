@@ -1,4 +1,8 @@
 uniffi::setup_scaffolding!();
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(uniffi::Enum)]
 pub enum ErrEnum {
@@ -55,6 +59,7 @@ pub fn leaf_run_with_options(
     threads: i32,
     stack_size: i32,
 ) -> ErrEnum {
+    let _ = auto_reload;
     if let Err(e) = leaf::util::run_with_options(
         rt_id,
         config_path,
