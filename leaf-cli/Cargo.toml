@@ -1,6 +1,6 @@
 [package]
 name = "leaf-cli"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["eycorsican <eric.y.corsican@gmail.com>"]
 edition = "2021"
 
@@ -23,8 +23,6 @@ path = "../leaf"
 default-features = false
 features = [
   "default-ring",
-  "outbound-quic",
-  "outbound-quic",
   "ctrlc",
   "auto-reload"
 ]
@@ -34,8 +32,6 @@ path = "../leaf"
 default-features = false
 features = [
   "default-ring",
-  "outbound-quic",
-  "outbound-quic",
   "ctrlc",
   "auto-reload",
   "inbound-nf",

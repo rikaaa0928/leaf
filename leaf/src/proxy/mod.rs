@@ -1,4 +1,3 @@
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::ffi::CString;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -21,9 +20,7 @@ use std::os::unix::io::{AsFd, AsRawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, AsSocket};
 #[cfg(target_os = "android")]
-use {
-    std::os::unix::io::RawFd, tokio::io::AsyncWriteExt, tokio::net::UnixStream, tracing::trace,
-};
+use {std::os::unix::io::RawFd, tokio::io::AsyncWriteExt, tokio::net::UnixStream, tracing::trace};
 
 use crate::{
     app::SyncDnsClient,
@@ -196,7 +193,7 @@ impl TcpListener {
     pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         let (stream, addr) = self.inner.accept().await?;
         apply_socket_opts(&stream)?;
-        SockRef::from(&stream).set_linger(Some(Duration::ZERO))?;
+        stream.set_linger(Some(Duration::ZERO))?;
         Ok((stream, addr))
     }
 }
@@ -218,10 +215,10 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
     let mut last_err = None;
     for bind in option::OUTBOUND_BINDS.iter() {
         match bind {
-            OutboundBind::Interface(_iface) => {
+            OutboundBind::Interface(iface) => {
                 #[cfg(target_os = "macos")]
                 unsafe {
-                    let ifa = CString::new(_iface.as_bytes()).unwrap();
+                    let ifa = CString::new(iface.as_bytes()).unwrap();
                     let ifidx: libc::c_uint = libc::if_nametoindex(ifa.as_ptr());
                     if ifidx == 0 {
                         last_err = Some(io::Error::last_os_error());
@@ -248,12 +245,12 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
                         last_err = Some(io::Error::last_os_error());
                         continue;
                     }
-                    debug!("socket bind {}", _iface);
+                    debug!("socket bind {}", iface);
                     return Ok(());
                 }
                 #[cfg(target_os = "linux")]
                 unsafe {
-                    let ifa = CString::new(_iface.as_bytes()).unwrap();
+                    let ifa = CString::new(iface.as_bytes()).unwrap();
                     let ret = libc::setsockopt(
                         socket.as_fd().as_raw_fd(),
                         libc::SOL_SOCKET,
@@ -265,7 +262,7 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
                         last_err = Some(io::Error::last_os_error());
                         continue;
                     }
-                    debug!("socket bind {}", _iface);
+                    debug!("socket bind {}", iface);
                     return Ok(());
                 }
                 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -414,7 +411,7 @@ pub async fn connect_datagram_outbound(
                 };
                 Ok(Some(OutboundTransport::Datagram(Box::new(
                     DomainResolveOutboundDatagram::new(socket, dns_client.clone()),
-                ) as AnyOutboundDatagram)))
+                ))))
             }
             Network::Tcp => {
                 let stream = new_tcp_stream(dns_client.clone(), &addr, &port).await?;
@@ -431,13 +428,13 @@ pub async fn connect_datagram_outbound(
                         SocksAddr::Domain(domain.to_owned(), port.to_owned()),
                         dns_client.clone(),
                     ),
-                ) as AnyOutboundDatagram)))
+                ))))
             }
             SocksAddr::Ip(addr) => {
                 let socket = new_udp_socket(addr).await?;
                 Ok(Some(OutboundTransport::Datagram(Box::new(
                     StdOutboundDatagram::new(socket),
-                ) as AnyOutboundDatagram)))
+                ))))
             }
         },
         _ => Ok(None),

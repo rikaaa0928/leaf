@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io;
 use std::io::BufReader;
+use std::io::Cursor;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -114,18 +115,28 @@ impl Handler {
         {
             let mut roots = RootCertStore::empty();
             if let Some(cert) = certificate {
-                let mut pem = BufReader::new(File::open(cert)?);
-                for cert in rustls_pemfile::certs(&mut pem) {
-                    roots.add(cert?)?;
+                if cert.contains("-----BEGIN") {
+                    let mut pem = BufReader::new(Cursor::new(cert.as_bytes()));
+                    for cert in rustls_pemfile::certs(&mut pem) {
+                        roots.add(cert?)?;
+                    }
+                } else {
+                    let mut pem = BufReader::new(File::open(cert)?);
+                    for cert in rustls_pemfile::certs(&mut pem) {
+                        roots.add(cert?)?;
+                    }
                 }
             } else {
                 roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
             }
-            let builder = ClientConfig::builder_with_provider(
-                rustls::crypto::ring::default_provider().into(),
-            )
-            .with_safe_default_protocol_versions()
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+            #[cfg(feature = "rustls-tls-aws-lc")]
+            let provider = rustls::crypto::aws_lc_rs::default_provider().into();
+            #[cfg(not(feature = "rustls-tls-aws-lc"))]
+            let provider = rustls::crypto::ring::default_provider().into();
+
+            let builder = ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
 
             let mut config = if insecure {
                 builder
