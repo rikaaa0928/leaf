@@ -105,7 +105,7 @@ impl OutboundDatagramRecvHalf for RogDatagramRecvHalf {
                         let data_len = std::cmp::min(response.payload.len(), buf.len());
                         buf[..data_len].copy_from_slice(&response.payload[..data_len]);
 
-                        let src_addr = if let (Some(addr), Some(port)) = (&response.src_addr, response.src_port) {
+                        let src_addr = if let (Some(addr), Some(port)) = (&response.dst_addr, response.dst_port) {
                             if let Ok(ip) = addr.parse() {
                                 SocksAddr::Ip(std::net::SocketAddr::new(ip, port as u16))
                             } else {
