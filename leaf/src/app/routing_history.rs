@@ -28,10 +28,10 @@ impl RoutingHistory {
     }
 
     pub fn set_enabled(&self, enabled: bool, max_records: usize) {
+        let mut records = self.records.lock().unwrap();
         self.enabled.store(enabled, Ordering::SeqCst);
         self.max_records.store(max_records, Ordering::SeqCst);
         if !enabled {
-            let mut records = self.records.lock().unwrap();
             records.clear();
         }
     }
@@ -41,13 +41,14 @@ impl RoutingHistory {
     }
 
     pub fn add(&self, record: RoutingRecord) {
+        let mut records = self.records.lock().unwrap();
         if !self.is_enabled() {
             return;
         }
-        let mut records = self.records.lock().unwrap();
         records.push_back(record);
         let max = self.max_records.load(Ordering::SeqCst);
-        while records.len() > max && max > 0 {
+        let max = if max == 0 { 1 } else { max };
+        while records.len() > max {
             records.pop_front();
         }
     }
