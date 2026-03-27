@@ -1,6 +1,7 @@
 use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
 
 use lazy_static::lazy_static;
 
@@ -68,6 +69,11 @@ lazy_static! {
 }
 
 lazy_static! {
+    /// Maximum number of recent connections stored in StatManager.
+    pub static ref MAX_RECENT_CONNECTIONS: usize = {
+        get_env_var_or("MAX_RECENT_CONNECTIONS", 0)
+    };
+
     pub static ref HTTP_USER_AGENT: String = {
         get_env_var_or_else(
             "HTTP_USER_AGENT",
@@ -88,39 +94,52 @@ lazy_static! {
         get_env_var_or("LOG_CONSOLE_OUT", false)
     };
 
-    pub static ref LOG_NO_COLOR: bool = {
-        get_env_var_or("LOG_NO_COLOR", false)
-    };
-
     /// Turn on TLS SNI sniffing, the sniffed SNI would override the original
     /// destination address, by default the sniffing would perform only on
     /// connections with destination port 443, set also TLS_DOMAIN_SNIFFING_ALL
     /// to make the sniffing work on all connections.
-    pub static ref TLS_DOMAIN_SNIFFING: bool = {
-        get_env_var_or_else(
+    pub static ref TLS_DOMAIN_SNIFFING: AtomicBool = {
+        let v: bool = get_env_var_or_else(
             "TLS_DOMAIN_SNIFFING",
             || get_env_var_or("DOMAIN_SNIFFING", false), // deprecated env var
-        )
+        );
+        AtomicBool::new(v)
     };
 
     /// Turn on TLS SNI sniffing for all TCP connections, this may slow down the
     /// connections a little bit, depending on whether the sniff can make an early
     /// return.
-    pub static ref TLS_DOMAIN_SNIFFING_ALL: bool = {
-        get_env_var_or("TLS_DOMAIN_SNIFFING_ALL", false)
+    pub static ref TLS_DOMAIN_SNIFFING_ALL: AtomicBool = {
+        let v: bool = get_env_var_or("TLS_DOMAIN_SNIFFING_ALL", false);
+        AtomicBool::new(v)
     };
 
     /// Turn on HTTP host sniffing, by default only perform on connections with
     /// destination port 80.
-    pub static ref HTTP_DOMAIN_SNIFFING: bool = {
-        get_env_var_or("HTTP_DOMAIN_SNIFFING", false)
+    pub static ref HTTP_DOMAIN_SNIFFING: AtomicBool = {
+        let v: bool = get_env_var_or("HTTP_DOMAIN_SNIFFING", false);
+        AtomicBool::new(v)
     };
 
     /// Turn on HTTP host sniffing for all TCP connections, this may slow down the
     /// connections a little bit, depending on whether the sniff can make an early
     /// return.
-    pub static ref HTTP_DOMAIN_SNIFFING_ALL: bool = {
-        get_env_var_or("HTTP_DOMAIN_SNIFFING_ALL", false)
+    pub static ref HTTP_DOMAIN_SNIFFING_ALL: AtomicBool = {
+        let v: bool = get_env_var_or("HTTP_DOMAIN_SNIFFING_ALL", false);
+        AtomicBool::new(v)
+    };
+
+    /// Override the original destination with the sniffed domain.
+    pub static ref DOMAIN_OVERRIDE: AtomicBool = {
+        let v: bool = get_env_var_or("DOMAIN_OVERRIDE", false);
+        AtomicBool::new(v)
+    };
+
+    /// Turn on DNS sniffing, if the destination is an IP, we try to find the
+    /// domain from the DNS cache.
+    pub static ref DNS_DOMAIN_SNIFFING: AtomicBool = {
+        let v: bool = get_env_var_or("DNS_DOMAIN_SNIFFING", false);
+        AtomicBool::new(v)
     };
 
     /// Uplink timeout after downlink EOF.
@@ -233,7 +252,10 @@ lazy_static! {
     };
 
     pub static ref OUTBOUND_BINDS: Vec<crate::proxy::OutboundBind> = {
-        let binds = get_env_var_or("OUTBOUND_INTERFACE", "0.0.0.0,::".to_string());
+        let binds = get_env_var_or("OUTBOUND_INTERFACE", "".to_string());
+        if binds.is_empty() {
+            return Vec::new();
+        }
         let mut outbound_binds = Vec::new();
         for item in binds.split(',').map(str::trim) {
             if let Ok(addr) = crate::common::net::parse_bind_addr(item) {
@@ -285,16 +307,50 @@ lazy_static! {
         get_env_var_or("DNS_TIMEOUT", 4)
     };
 
+    pub static ref DNS_SERVER_RESELECT_INTERVAL_SECS: u64 = {
+        get_env_var_or("DNS_SERVER_RESELECT_INTERVAL_SECS", 30)
+    };
+
+    pub static ref DNS_SERVER_SLOW_RESPONSE_MS: u64 = {
+        get_env_var_or("DNS_SERVER_SLOW_RESPONSE_MS", 800)
+    };
+
+    pub static ref DNS_SERVER_SWITCH_THRESHOLD: usize = {
+        get_env_var_or("DNS_SERVER_SWITCH_THRESHOLD", 3)
+    };
+
+    pub static ref DNS_SERVER_FALLBACK_CONCURRENCY: usize = {
+        get_env_var_or("DNS_SERVER_FALLBACK_CONCURRENCY", 1)
+    };
+
+    pub static ref DNS_DUALSTACK_DELAY_MS: u64 = {
+        get_env_var_or("DNS_DUALSTACK_DELAY_MS", 250)
+    };
+
     pub static ref DEFAULT_TUN_NAME: String = {
         get_env_var_or("DEFAULT_TUN_NAME", "utun233".to_string())
     };
 
     pub static ref DEFAULT_TUN_IPV4_ADDR: String = {
-        get_env_var_or("DEFAULT_TUN_IPV4_ADDR", "192.168.233.2".to_string())
+        #[cfg(windows)]
+        {
+            get_env_var_or("DEFAULT_TUN_IPV4_ADDR", "10.7.7.2".to_string())
+        }
+        #[cfg(not(windows))]
+        {
+            get_env_var_or("DEFAULT_TUN_IPV4_ADDR", "192.168.233.2".to_string())
+        }
     };
 
     pub static ref DEFAULT_TUN_IPV4_GW: String = {
-        get_env_var_or("DEFAULT_TUN_IPV4_GW", "192.168.233.1".to_string())
+        #[cfg(windows)]
+        {
+            get_env_var_or("DEFAULT_TUN_IPV4_GW", "10.7.7.1".to_string())
+        }
+        #[cfg(not(windows))]
+        {
+            get_env_var_or("DEFAULT_TUN_IPV4_GW", "192.168.233.1".to_string())
+        }
     };
 
     pub static ref DEFAULT_TUN_IPV4_MASK: String = {

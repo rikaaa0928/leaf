@@ -8,33 +8,15 @@ use bytes::BytesMut;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
 use tokio::time::timeout;
 
-use crate::option;
 use crate::session::Session;
 
-fn should_sniff_tls(sess: &Session) -> bool {
-    if *option::TLS_DOMAIN_SNIFFING {
-        if !*option::TLS_DOMAIN_SNIFFING_ALL && sess.destination.port() != 443 {
-            return false;
-        }
-        true
-    } else {
-        false
-    }
-}
-
-fn should_sniff_http(sess: &Session) -> bool {
-    if *option::HTTP_DOMAIN_SNIFFING {
-        if !*option::HTTP_DOMAIN_SNIFFING_ALL && sess.destination.port() != 80 {
-            return false;
-        }
-        true
-    } else {
-        false
-    }
-}
-
 pub fn should_sniff(sess: &Session) -> bool {
-    !sess.destination.is_domain() && (should_sniff_tls(sess) || should_sniff_http(sess))
+    !sess.destination.is_domain()
+}
+
+pub enum SniffKind {
+    Tls,
+    Http,
 }
 
 pub struct SniffingStream<T> {
@@ -211,7 +193,7 @@ where
         SniffResult::NotEnoughData
     }
 
-    pub async fn sniff(&mut self, sess: &Session) -> io::Result<Option<String>> {
+    pub async fn sniff(&mut self, _sess: &Session) -> io::Result<Option<(SniffKind, String)>> {
         for _ in 0..3 {
             match timeout(
                 Duration::from_millis(100),
@@ -221,18 +203,21 @@ where
             {
                 Ok(res) => match res {
                     Ok(n) => {
-                        if should_sniff_tls(sess) {
-                            match self.sniff_tls_sni(&self.buf[..]) {
-                                SniffResult::NotEnoughData => continue,
-                                SniffResult::NotMatch => (),
-                                SniffResult::Domain(domain) => return Ok(Some(domain)),
+                        if n == 0 {
+                            return Ok(None);
+                        }
+                        match self.sniff_tls_sni(&self.buf[..]) {
+                            SniffResult::NotEnoughData => continue,
+                            SniffResult::NotMatch => (),
+                            SniffResult::Domain(domain) => {
+                                return Ok(Some((SniffKind::Tls, domain)))
                             }
                         }
-                        if should_sniff_http(sess) {
-                            match self.sniff_http_host(&self.buf[..n]) {
-                                SniffResult::NotEnoughData => continue,
-                                SniffResult::NotMatch => (),
-                                SniffResult::Domain(domain) => return Ok(Some(domain)),
+                        match self.sniff_http_host(&self.buf[..]) {
+                            SniffResult::NotEnoughData => continue,
+                            SniffResult::NotMatch => (),
+                            SniffResult::Domain(domain) => {
+                                return Ok(Some((SniffKind::Http, domain)))
                             }
                         }
                         return Ok(None);

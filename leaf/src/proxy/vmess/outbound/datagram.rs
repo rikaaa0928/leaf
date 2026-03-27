@@ -34,6 +34,7 @@ impl OutboundDatagramHandler for Handler {
         sess: &'a Session,
         transport: Option<AnyOutboundTransport>,
     ) -> io::Result<AnyOutboundDatagram> {
+        tracing::trace!("handling outbound datagram");
         let uuid = Uuid::parse_str(&self.uuid)
             .map_err(|e| io::Error::other(format!("parse uuid failed: {}", e)))?;
         let mut request_header = RequestHeader {
@@ -63,7 +64,7 @@ impl OutboundDatagramHandler for Handler {
         }
 
         let mut header_buf = BytesMut::new();
-        let client_sess = ClientSession::new();
+        let client_sess = ClientSession::new(true);
         request_header
             .encode(&mut header_buf, &client_sess)
             .map_err(|e| io::Error::other(format!("encode request header failed: {}", e)))?;

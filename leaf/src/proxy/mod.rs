@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::ffi::CString;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -13,14 +14,20 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::net::{TcpSocket, TcpStream, UdpSocket};
 use tokio::time::timeout;
-use tracing::debug;
+use tracing::{debug, trace};
 
 #[cfg(unix)]
-use std::os::unix::io::{AsFd, AsRawFd};
+use std::os::unix::io::AsFd;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::os::unix::io::AsRawFd;
 #[cfg(windows)]
-use std::os::windows::io::{AsRawSocket, AsSocket};
+use std::os::windows::io::AsSocket;
 #[cfg(target_os = "android")]
-use {std::os::unix::io::RawFd, tokio::io::AsyncWriteExt, tokio::net::UnixStream, tracing::trace};
+use {
+    std::os::unix::io::{AsRawFd, RawFd},
+    tokio::io::AsyncWriteExt,
+    tokio::net::UnixStream,
+};
 
 use crate::{
     app::SyncDnsClient,
@@ -47,12 +54,16 @@ pub mod failover;
 pub mod hc;
 #[cfg(feature = "inbound-http")]
 pub mod http;
+#[cfg(feature = "outbound-mptp")]
+pub mod mptp;
 #[cfg(all(feature = "inbound-nf", windows))]
 pub mod nf;
 #[cfg(feature = "outbound-obfs")]
 pub mod obfs;
 #[cfg(any(feature = "inbound-quic", feature = "outbound-quic"))]
 pub mod quic;
+#[cfg(feature = "outbound-reality")]
+pub mod reality;
 #[cfg(feature = "outbound-redirect")]
 pub mod redirect;
 #[cfg(feature = "outbound-select")]
@@ -71,6 +82,8 @@ pub mod trojan;
 pub mod tryall;
 #[cfg(feature = "inbound-tun")]
 pub mod tun;
+#[cfg(feature = "outbound-vless")]
+pub mod vless;
 #[cfg(feature = "outbound-vmess")]
 pub mod vmess;
 #[cfg(any(feature = "inbound-ws", feature = "outbound-ws"))]
@@ -99,10 +112,6 @@ pub enum DatagramTransportType {
 
 pub trait Tag {
     fn tag(&self) -> &String;
-}
-
-pub trait Color {
-    fn color(&self) -> &colored::Color;
 }
 
 #[derive(Debug)]
@@ -193,7 +202,7 @@ impl TcpListener {
     pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         let (stream, addr) = self.inner.accept().await?;
         apply_socket_opts(&stream)?;
-        stream.set_linger(Some(Duration::ZERO))?;
+        SockRef::from(&stream).set_linger(Some(Duration::ZERO))?;
         Ok((stream, addr))
     }
 }
@@ -211,6 +220,9 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
             return Ok(());
         }
         _ => {}
+    }
+    if option::OUTBOUND_BINDS.is_empty() {
+        return Ok(());
     }
     let mut last_err = None;
     for bind in option::OUTBOUND_BINDS.iter() {
@@ -267,6 +279,7 @@ async fn bind_socket<T: BindSocket>(socket: &T, indicator: &SocketAddr) -> io::R
                 }
                 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
                 {
+                    let _ = iface;
                     return Err(io::Error::new(
                         io::ErrorKind::Other,
                         "binding to interface is not supported on this platform",
@@ -305,6 +318,10 @@ pub async fn new_udp_socket(indicator: &SocketAddr) -> io::Result<UdpSocket> {
     socket.set_nonblocking(true)?;
 
     bind_socket(&socket, indicator).await?;
+
+    if option::OUTBOUND_BINDS.is_empty() && indicator.ip().is_unspecified() {
+        BindSocket::bind(&socket, indicator)?;
+    }
 
     #[cfg(target_os = "android")]
     protect_socket(socket.as_raw_fd()).await?;
@@ -383,17 +400,20 @@ pub async fn connect_stream_outbound(
 ) -> io::Result<Option<AnyStream>> {
     match handler.stream()?.connect_addr() {
         OutboundConnect::Proxy(Network::Tcp, addr, port) => {
+            trace!("connect stream proxy outbound addr={} port={}", &addr, port);
             Ok(Some(new_tcp_stream(dns_client, &addr, &port).await?))
         }
-        OutboundConnect::Direct => Ok(Some(
-            new_tcp_stream(
-                dns_client,
-                &sess.destination.host(),
-                &sess.destination.port(),
-            )
-            .await?,
-        )),
-        _ => Ok(None),
+        OutboundConnect::Direct => {
+            let dest = &sess.destination;
+            trace!("connect stream direct dst={}", &dest);
+            Ok(Some(
+                new_tcp_stream(dns_client, &dest.host(), &dest.port()).await?,
+            ))
+        }
+        _ => {
+            trace!("connect stream None");
+            Ok(None)
+        }
     }
 }
 
@@ -425,7 +445,7 @@ pub async fn connect_datagram_outbound(
                     DomainAssociatedOutboundDatagram::new(
                         socket,
                         sess.source,
-                        SocksAddr::Domain(domain.to_owned(), port.to_owned()),
+                        SocksAddr::Domain(domain.to_owned(), *port),
                         dns_client.clone(),
                     ),
                 ))))
@@ -531,12 +551,15 @@ impl<S> ProxyStream for S where S: AsyncRead + AsyncWrite + Send + Sync + Unpin 
 
 pub type AnyStream = Box<dyn ProxyStream>;
 
-pub trait BaseHandler: Tag + Color + Send + Sync + Unpin {}
+pub trait BaseHandler: Tag + Send + Sync + Unpin {}
 
 /// An outbound handler for both UDP and TCP outgoing connections.
 pub trait OutboundHandler: BaseHandler {
     fn stream(&self) -> io::Result<&AnyOutboundStreamHandler>;
     fn datagram(&self) -> io::Result<&AnyOutboundDatagramHandler>;
+    fn is_direct(&self) -> bool {
+        false
+    }
 }
 
 pub type AnyOutboundHandler = Arc<dyn OutboundHandler>;

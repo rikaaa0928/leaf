@@ -4,6 +4,8 @@ use std::iter::FromIterator;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
+use chrono::{Local, TimeZone};
+
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -46,6 +48,10 @@ mod models {
         pub bytes_recvd: u64,
         pub send_completed: bool,
         pub recv_completed: bool,
+        pub start_time: u32,
+        pub dns_sniffed_domain: Option<String>,
+        pub tls_sniffed_domain: Option<String>,
+        pub http_sniffed_domain: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -150,7 +156,7 @@ mod handlers {
         let mut stats = Vec::new();
         let sm = rm.stat_manager();
         let sm = sm.read().await;
-        for c in sm.counters.iter() {
+        for c in sm.counters.values() {
             stats.push(models::Stat {
                 network: c.sess.network.to_string(),
                 inbound_tag: c.sess.inbound_tag.to_owned(),
@@ -162,6 +168,37 @@ mod handlers {
                 bytes_recvd: c.bytes_recvd(),
                 send_completed: c.send_completed(),
                 recv_completed: c.recv_completed(),
+                start_time: c.start_time(),
+                dns_sniffed_domain: c.sess.dns_sniffed_domain.clone(),
+                tls_sniffed_domain: c.sess.tls_sniffed_domain.clone(),
+                http_sniffed_domain: c.sess.http_sniffed_domain.clone(),
+            });
+        }
+        Ok(Json(stats))
+    }
+
+    pub async fn stat_recent_json(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Json<Vec<models::Stat>>, Infallible> {
+        let mut stats = Vec::new();
+        let sm = rm.stat_manager();
+        let sm = sm.read().await;
+        for c in sm.recent_counters.iter() {
+            stats.push(models::Stat {
+                network: c.sess.network.to_string(),
+                inbound_tag: c.sess.inbound_tag.to_owned(),
+                forwarded_source: c.sess.forwarded_source.map(|x| x.to_string()),
+                source: c.sess.source.to_string(),
+                destination: c.sess.destination.to_string(),
+                outbound_tag: c.sess.outbound_tag.to_owned(),
+                bytes_sent: c.bytes_sent(),
+                bytes_recvd: c.bytes_recvd(),
+                send_completed: c.send_completed(),
+                recv_completed: c.recv_completed(),
+                start_time: c.start_time(),
+                dns_sniffed_domain: c.sess.dns_sniffed_domain.clone(),
+                tls_sniffed_domain: c.sess.tls_sniffed_domain.clone(),
+                http_sniffed_domain: c.sess.http_sniffed_domain.clone(),
             });
         }
         Ok(Json(stats))
@@ -192,19 +229,19 @@ table, th, td {
         let total_counters = sm.counters.len();
         let active_counters = sm
             .counters
-            .iter()
+            .values()
             .filter(|x| !x.send_completed() || !x.recv_completed())
             .count();
         let active_sources = HashSet::<IpAddr>::from_iter(
             sm.counters
-                .iter()
+                .values()
                 .filter(|x| !x.send_completed() || !x.recv_completed())
                 .map(|c| c.sess.source.ip()),
         )
         .len();
         let active_forwarded_source = HashSet::<IpAddr>::from_iter(
             sm.counters
-                .iter()
+                .values()
                 .filter(|x| !x.send_completed() || !x.recv_completed())
                 .filter_map(|c| c.sess.forwarded_source),
         )
@@ -213,10 +250,10 @@ table, th, td {
             "Total {}<br>Active {}<br>Active Source {}<br>Active Forwarded Source {}<br><br>",
             total_counters, active_counters, active_sources, active_forwarded_source,
         ));
-        body.push_str("<tr><td>Network</td><td>Inbound</td><td>Forwarded</td><td>Source</td><td>Destination</td><td>Outbound</td><td>SentBytes</td><td>RecvdBytes</td><td>SendFin</td><td>RecvFin</td></tr>");
-        for c in sm.counters.iter() {
+        body.push_str("<tr><td>Network</td><td>Inbound</td><td>Forwarded</td><td>Source</td><td>Destination</td><td>Outbound</td><td>SentBytes</td><td>RecvdBytes</td><td>SendFin</td><td>RecvFin</td><td>StartTime</td></tr>");
+        for c in sm.counters.values() {
             body.push_str(&format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
                 &c.sess.network,
                 &c.sess.inbound_tag,
                 &c.sess.forwarded_source.map(|x|x.to_string()).unwrap_or("None".to_string()),
@@ -227,6 +264,59 @@ table, th, td {
                 c.bytes_recvd(),
                 c.send_completed(),
                 c.recv_completed(),
+                Local
+                    .timestamp_opt(c.start_time() as i64, 0)
+                    .unwrap()
+                    .format("%H:%M:%S")
+                    .to_string(),
+            ));
+        }
+        body.push_str("</table></html>");
+        Ok(Html(body))
+    }
+
+    pub async fn stat_recent_html(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Html<String>, Infallible> {
+        let mut body = String::from(
+            r#"<html>
+<head><style>
+table, th, td {
+  border: 1px solid black;
+  border-collapse: collapse;
+  text-align: right;
+  padding: 4;
+  font-size: small;
+}
+.highlight {
+  font-weight: bold;
+}
+</style></head>
+<table style="border=4px solid">
+        "#,
+        );
+        let sm = rm.stat_manager();
+        let sm = sm.read().await;
+        body.push_str(&format!("Recent {}<br><br>", sm.recent_counters.len(),));
+        body.push_str("<tr><td>Network</td><td>Inbound</td><td>Forwarded</td><td>Source</td><td>Destination</td><td>Outbound</td><td>SentBytes</td><td>RecvdBytes</td><td>SendFin</td><td>RecvFin</td><td>StartTime</td></tr>");
+        for c in sm.recent_counters.iter() {
+            body.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                &c.sess.network,
+                &c.sess.inbound_tag,
+                &c.sess.forwarded_source.map(|x|x.to_string()).unwrap_or("None".to_string()),
+                &c.sess.source,
+                &c.sess.destination,
+                &c.sess.outbound_tag,
+                c.bytes_sent(),
+                c.bytes_recvd(),
+                c.send_completed(),
+                c.recv_completed(),
+                Local
+                    .timestamp_opt(c.start_time() as i64, 0)
+                    .unwrap()
+                    .format("%H:%M:%S")
+                    .to_string(),
             ));
         }
         body.push_str("</table></html>");
@@ -299,6 +389,14 @@ impl ApiServer {
         app = app
             .route("/api/v1/runtime/stat/html", get(handlers::stat_html))
             .route("/api/v1/runtime/stat/json", get(handlers::stat_json))
+            .route(
+                "/api/v1/runtime/stat/recent/html",
+                get(handlers::stat_recent_html),
+            )
+            .route(
+                "/api/v1/runtime/stat/recent/json",
+                get(handlers::stat_recent_json),
+            )
             .route(
                 "/api/v1/runtime/outbound/{tag}/last_peer_active",
                 get(handlers::last_peer_active),

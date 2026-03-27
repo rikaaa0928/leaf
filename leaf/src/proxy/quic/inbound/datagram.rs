@@ -13,7 +13,7 @@ use rustls_pemfile::{certs, pkcs8_private_keys, rsa_private_keys};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, trace, warn};
 
-use crate::{proxy::*, session::Session};
+use crate::{proxy::*, session::Session, session::StreamId};
 
 use super::QuicProxyStream;
 
@@ -31,7 +31,7 @@ impl Stream for Incoming {
                     source,
                     ..Default::default()
                 };
-                sess.stream_id = Some(send.id().index());
+                sess.stream_id = Some(StreamId::U64(send.id().index()));
                 Poll::Ready(Some(AnyBaseInboundTransport::Stream(
                     Box::new(QuicProxyStream { recv, send }),
                     sess,
@@ -56,32 +56,45 @@ pub struct Handler {
 
 impl Handler {
     pub fn new(certificate: String, certificate_key: String, alpns: Vec<String>) -> Result<Self> {
-        let (cert, key) =
-            fs::read(&certificate).and_then(|x| Ok((x, fs::read(&certificate_key)?)))?;
-
-        let cert = match Path::new(&certificate).extension().map(|ext| ext.to_str()) {
-            Some(Some("der")) => vec![CertificateDer::from(cert)],
-            _ => certs(&mut io::BufReader::new(&*cert)).collect::<Result<Vec<_>, _>>()?,
+        let cert = if certificate.contains("-----BEGIN") {
+            certificate.as_bytes().to_vec()
+        } else {
+            fs::read(&certificate)?
         };
 
-        let key = match Path::new(&certificate_key)
-            .extension()
-            .map(|ext| ext.to_str())
+        let key = if certificate_key.contains("-----BEGIN") {
+            certificate_key.as_bytes().to_vec()
+        } else {
+            fs::read(&certificate_key)?
+        };
+
+        let cert = if !certificate.contains("-----BEGIN")
+            && Path::new(&certificate).extension().map(|ext| ext.to_str()) == Some(Some("der"))
         {
-            Some(Some("der")) => PrivateKeyDer::Pkcs8(key.into()),
-            _ => {
-                let pkcs8 = pkcs8_private_keys(&mut io::BufReader::new(&*key))
-                    .collect::<Result<Vec<_>, _>>()?;
-                match pkcs8.into_iter().next() {
-                    Some(x) => PrivateKeyDer::Pkcs8(x),
-                    None => {
-                        let rsa = rsa_private_keys(&mut io::BufReader::new(&*key))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        match rsa.into_iter().next() {
-                            Some(x) => PrivateKeyDer::Pkcs1(x),
-                            None => {
-                                return Err(anyhow!("no private keys found",));
-                            }
+            vec![CertificateDer::from(cert)]
+        } else {
+            certs(&mut io::BufReader::new(&*cert)).collect::<Result<Vec<_>, _>>()?
+        };
+
+        let key = if !certificate_key.contains("-----BEGIN")
+            && Path::new(&certificate_key)
+                .extension()
+                .map(|ext| ext.to_str())
+                == Some(Some("der"))
+        {
+            PrivateKeyDer::Pkcs8(key.into())
+        } else {
+            let pkcs8 = pkcs8_private_keys(&mut io::BufReader::new(&*key))
+                .collect::<Result<Vec<_>, _>>()?;
+            match pkcs8.into_iter().next() {
+                Some(x) => PrivateKeyDer::Pkcs8(x),
+                None => {
+                    let rsa = rsa_private_keys(&mut io::BufReader::new(&*key))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    match rsa.into_iter().next() {
+                        Some(x) => PrivateKeyDer::Pkcs1(x),
+                        None => {
+                            return Err(anyhow!("no private keys found",));
                         }
                     }
                 }
@@ -126,12 +139,12 @@ async fn handle_conn(
     let (conn, _) = conn
         .into_0rtt()
         .map_err(|_| anyhow!("convert 0rtt failed"))?;
-    trace!("QUIC handling connection from {}", remote_addr);
+    trace!("quic handling connection from {}", remote_addr);
     loop {
         let s = conn.accept_bi().await?;
-        trace!("QUIC accepted stream from {}", remote_addr);
+        trace!("quic accepted stream from {}", remote_addr);
         if stream_tx.capacity() == 0 {
-            warn!("QUIC accept channel full");
+            warn!("quic accept channel full");
         }
         let _ = stream_tx.send((*remote_addr, s)).await;
     }
@@ -140,6 +153,7 @@ async fn handle_conn(
 #[async_trait]
 impl InboundDatagramHandler for Handler {
     async fn handle<'a>(&'a self, socket: AnyInboundDatagram) -> io::Result<AnyInboundTransport> {
+        tracing::trace!("handling inbound datagram");
         let (stream_tx, stream_rx) = channel(*crate::option::QUIC_ACCEPT_CHANNEL_SIZE);
         let endpoint = quinn::Endpoint::new(
             quinn::EndpointConfig::default(),
@@ -158,13 +172,13 @@ impl InboundDatagramHandler for Handler {
                             if let Err(e) = handle_conn(stream_tx_c, &remote_addr, connecting).await
                             {
                                 debug!(
-                                    "handle QUIC connection from {} failed: {}",
+                                    "handle quic connection from {} failed: {}",
                                     &remote_addr, e
                                 );
                             }
                         }
                         Err(e) => {
-                            debug!("accept QUIC connection from {} failed: {}", &remote_addr, e);
+                            debug!("accept quic connection from {} failed: {}", &remote_addr, e);
                         }
                     }
                 });
