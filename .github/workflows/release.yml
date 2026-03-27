@@ -5,6 +5,9 @@ on:
     tags:
       - v*
 
+permissions:
+  contents: write
+
 jobs:
   build-cli-cross:
     runs-on: ubuntu-latest
