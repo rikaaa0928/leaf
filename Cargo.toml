@@ -15,7 +15,10 @@ opt-level = 3
 lto = true
 # codegen-units = 1
 panic = "abort"
-# strip = "symbols"
+strip = "symbols"
+
+[profile.release.package.leaf-uniffi]
+strip = "none"
 
 [profile.dev]
 opt-level = 0
