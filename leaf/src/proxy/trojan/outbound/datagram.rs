@@ -30,6 +30,7 @@ impl OutboundDatagramHandler for Handler {
         sess: &'a Session,
         transport: Option<AnyOutboundTransport>,
     ) -> io::Result<AnyOutboundDatagram> {
+        tracing::trace!("handling outbound datagram");
         let stream = if let Some(OutboundTransport::Stream(stream)) = transport {
             stream
         } else {
@@ -46,9 +47,7 @@ impl OutboundDatagramHandler for Handler {
         buf.put_slice(b"\r\n");
 
         let destination = match &sess.destination {
-            SocksAddr::Domain(domain, port) => {
-                Some(SocksAddr::Domain(domain.to_owned(), port.to_owned()))
-            }
+            SocksAddr::Domain(domain, port) => Some(SocksAddr::Domain(domain.to_owned(), *port)),
             _ => None,
         };
 

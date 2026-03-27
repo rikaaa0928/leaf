@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use anyhow::Result;
+use async_recursion::async_recursion;
 use cidr::IpCidr;
 use futures::TryFutureExt;
 use maxminddb::geoip2::Country;
@@ -52,8 +53,11 @@ impl MmdbMatcher {
 
 impl Condition for MmdbMatcher {
     fn apply(&self, sess: &Session) -> bool {
-        if !sess.destination.is_domain() {
-            if let Some(ip) = sess.destination.ip() {
+        let destination = sess
+            .destination_for_routing()
+            .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&sess.destination));
+        if !destination.is_domain() {
+            if let Some(ip) = destination.ip() {
                 if let Ok(country) = self.reader.lookup::<Country>(ip) {
                     if let Some(country) = country.country {
                         if let Some(iso_code) = country.iso_code {
@@ -93,9 +97,12 @@ impl IpCidrMatcher {
 
 impl Condition for IpCidrMatcher {
     fn apply(&self, sess: &Session) -> bool {
-        if !sess.destination.is_domain() {
+        let destination = sess
+            .destination_for_routing()
+            .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&sess.destination));
+        if !destination.is_domain() {
             for cidr in &self.values {
-                if let Some(ip) = sess.destination.ip() {
+                if let Some(ip) = destination.ip() {
                     if cidr.contains(&ip) {
                         debug!("[{}] matches ip-cidr [{}]", ip, &cidr);
                         return true;
@@ -218,7 +225,10 @@ impl PortRangeMatcher {
 
 impl Condition for PortRangeMatcher {
     fn apply(&self, sess: &Session) -> bool {
-        let port = sess.destination.port();
+        let port = sess
+            .destination_for_routing()
+            .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&sess.destination))
+            .port();
         if port >= self.start && port <= self.end {
             debug!(
                 "[{}] matches port range [{}-{}]",
@@ -243,8 +253,11 @@ impl DomainKeywordMatcher {
 
 impl Condition for DomainKeywordMatcher {
     fn apply(&self, sess: &Session) -> bool {
-        if sess.destination.is_domain() {
-            if let Some(domain) = sess.destination.domain() {
+        let destination = sess
+            .destination_for_routing()
+            .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&sess.destination));
+        if destination.is_domain() {
+            if let Some(domain) = destination.domain() {
                 if domain.contains(&self.value) {
                     debug!("[{}] matches domain keyword [{}]", domain, &self.value);
                     return true;
@@ -287,8 +300,11 @@ fn is_sub_domain(d1: &str, d2: &str) -> bool {
 
 impl Condition for DomainSuffixMatcher {
     fn apply(&self, sess: &Session) -> bool {
-        if sess.destination.is_domain() {
-            if let Some(domain) = sess.destination.domain() {
+        let destination = sess
+            .destination_for_routing()
+            .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&sess.destination));
+        if destination.is_domain() {
+            if let Some(domain) = destination.domain() {
                 if is_sub_domain(domain, &self.value) {
                     debug!("[{}] matches domain suffix [{}]", domain, &self.value);
                     return true;
@@ -311,8 +327,11 @@ impl DomainFullMatcher {
 
 impl Condition for DomainFullMatcher {
     fn apply(&self, sess: &Session) -> bool {
-        if sess.destination.is_domain() {
-            if let Some(domain) = sess.destination.domain() {
+        let destination = sess
+            .destination_for_routing()
+            .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&sess.destination));
+        if destination.is_domain() {
+            if let Some(domain) = destination.domain() {
                 if domain == &self.value {
                     debug!("{} matches domain [{}]", domain, &self.value);
                     return true;
@@ -545,42 +564,43 @@ impl Router {
         Ok(())
     }
 
-    pub async fn pick_route<'a>(&'a self, sess: &'a Session) -> Result<&'a String> {
-        debug!("picking route for {}:{}", &sess.network, &sess.destination);
+    #[async_recursion]
+    pub async fn pick_route<'a>(&'a self, sess: &'a Session) -> Result<Option<&'a String>> {
+        let effective_dest = &sess.destination;
         for rule in &self.rules {
             if rule.apply(sess) {
-                return Ok(&rule.target);
+                return Ok(Some(&rule.target));
             }
         }
-        if sess.destination.is_domain() && self.domain_resolve {
+        if effective_dest.is_domain() && self.domain_resolve && !sess.skip_resolve {
+            debug!("resolve routing domain={:?}", effective_dest.domain());
             let ips = {
                 self.dns_client
                     .read()
                     .await
                     .lookup(
-                        sess.destination
+                        effective_dest
                             .domain()
                             .ok_or_else(|| anyhow!("illegal domain name"))?,
                     )
-                    .map_err(|e| anyhow!("lookup {} failed: {}", sess.destination.host(), e))
+                    .map_err(|e| anyhow!("lookup failed: {}", e))
                     .await?
             };
             if !ips.is_empty() {
                 let mut new_sess = sess.clone();
-                new_sess.destination = SocksAddr::from((ips[0], sess.destination.port()));
-                debug!(
-                    "re-matching with resolved ip [{}] for [{}]",
-                    ips[0],
-                    sess.destination.host()
-                );
+                new_sess.destination = SocksAddr::from((ips[0], effective_dest.port()));
+                new_sess.dns_sniffed_domain = None;
+                new_sess.tls_sniffed_domain = None;
+                new_sess.http_sniffed_domain = None;
+                debug!("re-matching with resolved ip={}", ips[0]);
                 for rule in &self.rules {
                     if rule.apply(&new_sess) {
-                        return Ok(&rule.target);
+                        return Ok(Some(&rule.target));
                     }
                 }
             }
         }
-        Err(anyhow!("no matching rules for {}", sess.destination))
+        Ok(None)
     }
 }
 

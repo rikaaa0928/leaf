@@ -16,6 +16,8 @@ use tracing::{debug, trace};
 use crate::proxy::chain;
 #[cfg(feature = "outbound-failover")]
 use crate::proxy::failover;
+#[cfg(feature = "outbound-mptp")]
+use crate::proxy::mptp;
 #[cfg(feature = "outbound-static")]
 use crate::proxy::r#static;
 #[cfg(feature = "outbound-select")]
@@ -33,6 +35,8 @@ use crate::proxy::drop;
 use crate::proxy::obfs;
 #[cfg(feature = "outbound-quic")]
 use crate::proxy::quic;
+#[cfg(feature = "outbound-reality")]
+use crate::proxy::reality;
 #[cfg(feature = "outbound-redirect")]
 use crate::proxy::redirect;
 #[cfg(feature = "outbound-shadowsocks")]
@@ -43,6 +47,8 @@ use crate::proxy::socks;
 use crate::proxy::tls;
 #[cfg(feature = "outbound-trojan")]
 use crate::proxy::trojan;
+#[cfg(feature = "outbound-vless")]
+use crate::proxy::vless;
 #[cfg(feature = "outbound-vmess")]
 use crate::proxy::vmess;
 #[cfg(feature = "outbound-ws")]
@@ -114,14 +120,13 @@ impl OutboundManager {
                 #[cfg(feature = "outbound-direct")]
                 "direct" => HandlerBuilder::default()
                     .tag(tag.clone())
-                    .color(colored::Color::Green)
                     .stream_handler(Arc::new(direct::StreamHandler))
                     .datagram_handler(Arc::new(direct::DatagramHandler))
+                    .is_direct(true)
                     .build(),
                 #[cfg(feature = "outbound-drop")]
                 "drop" => HandlerBuilder::default()
                     .tag(tag.clone())
-                    .color(colored::Color::Red)
                     .stream_handler(Arc::new(drop::StreamHandler))
                     .datagram_handler(Arc::new(drop::DatagramHandler))
                     .build(),
@@ -158,6 +163,8 @@ impl OutboundManager {
                     let datagram = Arc::new(socks::outbound::DatagramHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
+                        username: settings.username.clone(),
+                        password: settings.password.clone(),
                         dns_client: dns_client.clone(),
                     });
                     HandlerBuilder::default()
@@ -281,6 +288,42 @@ impl OutboundManager {
                         .datagram_handler(datagram)
                         .build()
                 }
+                #[cfg(feature = "outbound-vless")]
+                "vless" => {
+                    let settings =
+                        config::VlessOutboundSettings::parse_from_bytes(&outbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                    let stream = Arc::new(vless::outbound::StreamHandler {
+                        address: settings.address.clone(),
+                        port: settings.port as u16,
+                        uuid: settings.uuid.clone(),
+                    });
+                    let datagram = Arc::new(vless::outbound::DatagramHandler {
+                        address: settings.address.clone(),
+                        port: settings.port as u16,
+                        uuid: settings.uuid.clone(),
+                    });
+                    HandlerBuilder::default()
+                        .tag(tag.clone())
+                        .stream_handler(stream)
+                        .datagram_handler(datagram)
+                        .build()
+                }
+                #[cfg(feature = "outbound-reality")]
+                "reality" => {
+                    let settings =
+                        config::RealityOutboundSettings::parse_from_bytes(&outbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                    let stream = Arc::new(reality::outbound::StreamHandler {
+                        server_name: settings.server_name.clone(),
+                        public_key: settings.public_key.clone(),
+                        short_id: settings.short_id.clone(),
+                    });
+                    HandlerBuilder::default()
+                        .tag(tag.clone())
+                        .stream_handler(stream)
+                        .build()
+                }
                 #[cfg(feature = "outbound-tls")]
                 "tls" => {
                     let settings =
@@ -291,11 +334,26 @@ impl OutboundManager {
                     } else {
                         Some(settings.certificate.clone())
                     };
+                    let certificate_key = if settings.certificate_key.is_empty() {
+                        None
+                    } else {
+                        Some(settings.certificate_key.clone())
+                    };
+                    let ech_config_list = if settings.ech_config_list.is_empty() {
+                        None
+                    } else {
+                        Some(settings.ech_config_list.clone())
+                    };
                     let stream = Arc::new(tls::outbound::StreamHandler::new(
                         settings.server_name.clone(),
                         settings.alpn.clone(),
                         certificate,
+                        certificate_key,
                         settings.insecure,
+                        settings.ech,
+                        settings.ech_disable_dns_lookup,
+                        ech_config_list,
+                        dns_client.clone(),
                     )?);
                     HandlerBuilder::default()
                         .tag(tag.clone())
@@ -331,12 +389,18 @@ impl OutboundManager {
                     } else {
                         Some(settings.certificate.clone())
                     };
+                    let certificate_key = if settings.certificate_key.is_empty() {
+                        None
+                    } else {
+                        Some(settings.certificate_key.clone())
+                    };
                     let stream = Arc::new(quic::outbound::StreamHandler::new(
                         settings.address.clone(),
                         settings.port as u16,
                         server_name,
                         settings.alpn.clone(),
                         certificate,
+                        certificate_key,
                         dns_client.clone(),
                     ));
                     HandlerBuilder::default()
@@ -582,6 +646,42 @@ impl OutboundManager {
                             .tag(tag.clone())
                             .stream_handler(stream)
                             .datagram_handler(datagram)
+                            .build();
+                        handlers.insert(tag.clone(), handler);
+                        trace!(
+                            "added handler [{}] with actors: {}",
+                            &tag,
+                            settings.actors.join(",")
+                        );
+                    }
+                    #[cfg(feature = "outbound-mptp")]
+                    "mptp" => {
+                        let settings =
+                            config::MptpOutboundSettings::parse_from_bytes(&outbound.settings)
+                                .map_err(|e| {
+                                    anyhow!("invalid [{}] outbound settings: {}", &tag, e)
+                                })?;
+                        let mut actors = Vec::new();
+                        for actor in settings.actors.iter() {
+                            if let Some(a) = handlers.get(actor) {
+                                actors.push(a.clone());
+                            } else {
+                                continue 'outbounds;
+                            }
+                        }
+                        if actors.is_empty() {
+                            continue;
+                        }
+                        let stream = Arc::new(mptp::outbound::stream::Handler {
+                            actors: actors.clone(),
+                            address: settings.address.clone(),
+                            port: settings.port as u16,
+                            dns_client: dns_client.clone(),
+                        });
+                        let handler = HandlerBuilder::default()
+                            .tag(tag.clone())
+                            .stream_handler(stream.clone())
+                            .datagram_handler(stream)
                             .build();
                         handlers.insert(tag.clone(), handler);
                         trace!(

@@ -84,8 +84,10 @@ fn main() {
     }
 
     if env::var("PROTO_GEN").is_ok() {
+        let protoc = protoc_bin_vendored::protoc_bin_path().expect("protoc");
         // println!("cargo:rerun-if-changed=src/config/internal/config.proto");
         protobuf_codegen::Codegen::new()
+            .protoc_path(&protoc)
             .out_dir("src/config/internal")
             .includes(["src/config/internal"])
             .inputs(["src/config/internal/config.proto"])
@@ -100,6 +102,7 @@ fn main() {
 
         // println!("cargo:rerun-if-changed=src/config/geosite.proto");
         protobuf_codegen::Codegen::new()
+            .protoc_path(&protoc)
             .out_dir("src/config")
             .includes(["src/config"])
             .inputs(["src/config/geosite.proto"])
@@ -113,6 +116,7 @@ fn main() {
             .expect("Protobuf code gen failed");
 
         protobuf_codegen::Codegen::new()
+            .protoc_path(&protoc)
             .out_dir("src/app/outbound")
             .includes(["src/app/outbound"])
             .inputs(["src/app/outbound/selector_cache.proto"])

@@ -25,6 +25,7 @@ impl OutboundStreamHandler for Handler {
         _lhs: Option<&mut AnyStream>,
         stream: Option<AnyStream>,
     ) -> io::Result<AnyStream> {
+        tracing::trace!("handling outbound stream");
         let mut stream = stream.ok_or_else(|| io::Error::other("invalid input"))?;
         let auth = match (&self.username, &self.password) {
             (auth_username, _) if auth_username.is_empty() => None,
@@ -40,10 +41,9 @@ impl OutboundStreamHandler for Handler {
                     .await?;
             }
             SocksAddr::Domain(domain, port) => {
-                let _ =
-                    async_socks5::connect(&mut stream, (domain.to_owned(), port.to_owned()), auth)
-                        .map_err(io::Error::other)
-                        .await?;
+                let _ = async_socks5::connect(&mut stream, (domain.to_owned(), *port), auth)
+                    .map_err(io::Error::other)
+                    .await?;
             }
         }
         Ok(stream)

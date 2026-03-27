@@ -11,7 +11,7 @@ use rustls::pki_types::CertificateDer;
 use rustls_pemfile::certs;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
-use tracing::{debug, trace};
+use tracing::{debug, trace, Instrument};
 
 use crate::{app::SyncDnsClient, proxy::*, session::Session};
 
@@ -33,6 +33,7 @@ impl Manager {
         server_name: Option<String>,
         alpns: Vec<String>,
         certificate: Option<String>,
+        certificate_key: Option<String>,
         dns_client: SyncDnsClient,
     ) -> Self {
         let mut roots = rustls::RootCertStore::empty();
@@ -71,11 +72,21 @@ impl Manager {
         #[cfg(not(feature = "rustls-tls-aws-lc"))]
         let provider = rustls::crypto::ring::default_provider().into();
 
-        let mut client_crypto = rustls::ClientConfig::builder_with_provider(provider)
+        let builder = rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()
             .unwrap()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+            .with_root_certificates(roots);
+
+        let mut client_crypto = if let Some(_certificate) = certificate {
+            if let Some(_certificate_key) = certificate_key {
+                // FIXME support client auth
+                builder.with_no_client_auth()
+            } else {
+                builder.with_no_client_auth()
+            }
+        } else {
+            builder.with_no_client_auth()
+        };
         for alpn in alpns {
             client_crypto.alpn_protocols.push(alpn.as_bytes().to_vec());
         }
@@ -118,18 +129,18 @@ impl Manager {
                 match timeout(dial_timeout, conn.open_bi()).await {
                     Ok(Ok((send, recv))) => {
                         trace!(
-                            "opened QUIC stream on existing connection (rtt {} ms) in {} ms",
+                            "opened stream on existing connection (rtt {} ms) in {} ms",
                             conn.rtt().as_millis(),
                             start.elapsed().as_millis(),
                         );
                         return Ok(QuicProxyStream { recv, send });
                     }
                     Ok(Err(e)) => {
-                        debug!("open QUIC stream failed: {}", e);
+                        debug!("open stream failed: {}", e);
                         conns.swap_remove(idx);
                     }
                     Err(_) => {
-                        debug!("open QUIC stream timed out");
+                        debug!("open stream timed out");
                         conns.swap_remove(idx);
                     }
                 }
@@ -139,6 +150,7 @@ impl Manager {
         // FIXME A better indicator.
         let socket = self
             .new_udp_socket(&crate::option::UNSPECIFIED_BIND_ADDR)
+            .instrument(tracing::Span::current())
             .await?;
         let mut endpoint = quinn::Endpoint::new(
             quinn::EndpointConfig::default(),
@@ -153,6 +165,7 @@ impl Manager {
                 .await
                 .direct_lookup(&self.address)
                 .map_err(|e| io::Error::other(format!("lookup {} failed: {}", &self.address, e)))
+                .instrument(tracing::Span::current())
                 .await?
         };
         if ips.is_empty() {
@@ -176,7 +189,7 @@ impl Manager {
                     continue;
                 }
                 Err(_) => {
-                    last_err = Some(anyhow!("connect QUIC timed out"));
+                    last_err = Some(anyhow!("connect quic timed out"));
                     continue;
                 }
             };
@@ -187,7 +200,7 @@ impl Manager {
                     continue;
                 }
                 Err(_) => {
-                    last_err = Some(anyhow!("open QUIC stream timed out"));
+                    last_err = Some(anyhow!("open quic stream timed out"));
                     continue;
                 }
             };
@@ -196,12 +209,12 @@ impl Manager {
             conns.push(conn);
             conns.truncate(4);
 
-            trace!("opened QUIC stream on new connection",);
+            trace!("opened quic stream on new connection",);
 
             return Ok(QuicProxyStream { recv, send });
         }
 
-        Err(last_err.unwrap_or_else(|| anyhow!("connect QUIC failed")))
+        Err(last_err.unwrap_or_else(|| anyhow!("connect quic failed")))
     }
 }
 
@@ -218,10 +231,19 @@ impl Handler {
         server_name: Option<String>,
         alpns: Vec<String>,
         certificate: Option<String>,
+        certificate_key: Option<String>,
         dns_client: SyncDnsClient,
     ) -> Self {
         Self {
-            manager: Manager::new(address, port, server_name, alpns, certificate, dns_client),
+            manager: Manager::new(
+                address,
+                port,
+                server_name,
+                alpns,
+                certificate,
+                certificate_key,
+                dns_client,
+            ),
         }
     }
 
@@ -231,7 +253,7 @@ impl Handler {
         self.manager
             .new_stream()
             .await
-            .map_err(|e| io::Error::other(format!("new QUIC stream failed: {}", e)))
+            .map_err(|e| io::Error::other(format!("new quic stream failed: {}", e)))
     }
 }
 
@@ -249,6 +271,11 @@ impl OutboundStreamHandler for Handler {
         _lhs: Option<&mut AnyStream>,
         _stream: Option<AnyStream>,
     ) -> io::Result<AnyStream> {
-        Ok(Box::new(self.new_stream().await?))
+        tracing::trace!("handling outbound stream");
+        Ok(Box::new(
+            self.new_stream()
+                .instrument(tracing::Span::current())
+                .await?,
+        ))
     }
 }

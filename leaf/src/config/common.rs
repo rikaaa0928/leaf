@@ -17,6 +17,7 @@ pub struct Dns {
 pub struct Log {
     pub level: Option<String>,
     pub output: Option<String>,
+    pub format: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,13 +29,21 @@ pub struct CatInboundSettings {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NfInboundSettings {
-    #[serde(rename = "driverName")]
+    #[serde(rename = "driverName", alias = "driver_name")]
     pub driver_name: String,
     pub nfapi: Option<String>,
-    #[serde(rename = "fakeDnsExclude")]
+    #[serde(rename = "fakeDnsExclude", alias = "fake_dns_exclude")]
     pub fake_dns_exclude: Option<Vec<String>>,
-    #[serde(rename = "fakeDnsInclude")]
+    #[serde(rename = "fakeDnsInclude", alias = "fake_dns_include")]
     pub fake_dns_include: Option<Vec<String>>,
+    pub tun2socks: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SocksInboundSettings {
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -73,16 +82,28 @@ pub struct AMuxInboundSettings {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct QuicInboundSettings {
     pub certificate: Option<String>,
-    #[serde(rename = "certificateKey")]
+    #[serde(rename = "certificateKey", alias = "certificate_key")]
     pub certificate_key: Option<String>,
+    #[serde(rename = "rawCertificate", alias = "raw_certificate")]
+    pub raw_certificate: Option<Vec<String>>,
+    #[serde(rename = "rawCertificateKey", alias = "raw_certificate_key")]
+    pub raw_certificate_key: Option<Vec<String>>,
     pub alpn: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TlsInboundSettings {
     pub certificate: Option<String>,
-    #[serde(rename = "certificateKey")]
+    #[serde(rename = "certificateKey", alias = "certificate_key")]
     pub certificate_key: Option<String>,
+    #[serde(rename = "rawCertificate", alias = "raw_certificate")]
+    pub raw_certificate: Option<Vec<String>>,
+    #[serde(rename = "rawCertificateKey", alias = "raw_certificate_key")]
+    pub raw_certificate_key: Option<Vec<String>>,
+    #[serde(rename = "echConfig", alias = "ech_config")]
+    pub ech_config: Option<String>,
+    #[serde(rename = "echKey", alias = "ech_key")]
+    pub ech_key: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -90,6 +111,10 @@ pub struct TlsInboundSettings {
 pub struct ChainInboundSettings {
     pub actors: Option<Vec<String>>,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct MptpInboundSettings {}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TunInboundSettings {
@@ -100,10 +125,14 @@ pub struct TunInboundSettings {
     pub gateway: Option<String>,
     pub netmask: Option<String>,
     pub mtu: Option<i32>,
-    #[serde(rename = "fakeDnsExclude")]
+    #[serde(rename = "fakeDnsExclude", alias = "fake_dns_exclude")]
     pub fake_dns_exclude: Option<Vec<String>>,
-    #[serde(rename = "fakeDnsInclude")]
+    #[serde(rename = "fakeDnsInclude", alias = "fake_dns_include")]
     pub fake_dns_include: Option<Vec<String>>,
+    pub tun2socks: Option<String>,
+    pub wintun: Option<String>,
+    #[serde(rename = "dnsServers", alias = "dns_servers")]
+    pub dns_servers: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -153,9 +182,26 @@ pub struct VMessOutboundSettings {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct VlessOutboundSettings {
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    pub uuid: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RealityOutboundSettings {
+    #[serde(rename = "serverName", alias = "server_name")]
+    pub server_name: Option<String>,
+    #[serde(rename = "publicKey", alias = "public_key")]
+    pub public_key: Option<String>,
+    #[serde(rename = "shortId", alias = "short_id")]
+    pub short_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TryAllOutboundSettings {
     pub actors: Option<Vec<String>>,
-    #[serde(rename = "delayBase")]
+    #[serde(rename = "delayBase", alias = "delay_base")]
     pub delay_base: Option<u32>,
 }
 
@@ -167,11 +213,23 @@ pub struct StaticOutboundSettings {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TlsOutboundSettings {
-    #[serde(rename = "serverName")]
+    #[serde(rename = "serverName", alias = "server_name")]
     pub server_name: Option<String>,
     pub alpn: Option<Vec<String>>,
     pub certificate: Option<String>,
+    #[serde(rename = "certificateKey", alias = "certificate_key")]
+    pub certificate_key: Option<String>,
+    #[serde(rename = "rawCertificate", alias = "raw_certificate")]
+    pub raw_certificate: Option<Vec<String>>,
+    #[serde(rename = "rawCertificateKey", alias = "raw_certificate_key")]
+    pub raw_certificate_key: Option<Vec<String>>,
     pub insecure: Option<bool>,
+    #[serde(rename = "ech")]
+    pub ech: Option<bool>,
+    #[serde(rename = "echDisableDnsLookup", alias = "ech_disable_dns_lookup")]
+    pub ech_disable_dns_lookup: Option<bool>,
+    #[serde(rename = "echConfigList", alias = "ech_config_list")]
+    pub ech_config_list: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -185,7 +243,7 @@ pub struct AMuxOutboundSettings {
     pub address: Option<String>,
     pub port: Option<u16>,
     pub actors: Option<Vec<String>>,
-    #[serde(rename = "maxAccepts")]
+    #[serde(rename = "maxAccepts", alias = "max_accepts")]
     pub max_accepts: Option<u32>,
     pub concurrency: Option<u32>,
     pub max_recv_bytes: Option<u64>,
@@ -196,9 +254,15 @@ pub struct AMuxOutboundSettings {
 pub struct QuicOutboundSettings {
     pub address: Option<String>,
     pub port: Option<u16>,
-    #[serde(rename = "serverName")]
+    #[serde(rename = "serverName", alias = "server_name")]
     pub server_name: Option<String>,
     pub certificate: Option<String>,
+    #[serde(rename = "certificateKey", alias = "certificate_key")]
+    pub certificate_key: Option<String>,
+    #[serde(rename = "rawCertificate", alias = "raw_certificate")]
+    pub raw_certificate: Option<Vec<String>>,
+    #[serde(rename = "rawCertificateKey", alias = "raw_certificate_key")]
+    pub raw_certificate_key: Option<Vec<String>>,
     pub alpn: Option<Vec<String>>,
 }
 
@@ -209,36 +273,46 @@ pub struct ChainOutboundSettings {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MptpOutboundSettings {
+    pub actors: Option<Vec<String>>,
+    pub address: Option<String>,
+    pub port: Option<u16>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FailOverOutboundSettings {
     pub actors: Option<Vec<String>>,
-    #[serde(rename = "failTimeout")]
+    #[serde(rename = "failTimeout", alias = "fail_timeout")]
     pub fail_timeout: Option<u32>,
-    #[serde(rename = "healthCheck")]
+    #[serde(rename = "healthCheck", alias = "health_check")]
     pub health_check: Option<bool>,
-    #[serde(rename = "healthCheckTimeout")]
+    #[serde(rename = "healthCheckTimeout", alias = "health_check_timeout")]
     pub health_check_timeout: Option<u32>,
-    #[serde(rename = "healthCheckDelay")]
+    #[serde(rename = "healthCheckDelay", alias = "health_check_delay")]
     pub health_check_delay: Option<u32>,
-    #[serde(rename = "healthCheckActive")]
+    #[serde(rename = "healthCheckActive", alias = "health_check_active")]
     pub health_check_active: Option<u32>,
-    #[serde(rename = "healthCheckPrefers")]
+    #[serde(rename = "healthCheckPrefers", alias = "health_check_prefers")]
     pub health_check_prefers: Option<Vec<String>>,
-    #[serde(rename = "checkInterval")]
+    #[serde(rename = "checkInterval", alias = "check_interval")]
     pub check_interval: Option<u32>,
-    #[serde(rename = "healthCheckOnStart")]
+    #[serde(rename = "healthCheckOnStart", alias = "health_check_on_start")]
     pub health_check_on_start: Option<bool>,
-    #[serde(rename = "healthCheckWait")]
+    #[serde(rename = "healthCheckWait", alias = "health_check_wait")]
     pub health_check_wait: Option<bool>,
-    #[serde(rename = "healthCheckAttempts")]
+    #[serde(rename = "healthCheckAttempts", alias = "health_check_attempts")]
     pub health_check_attempts: Option<u32>,
-    #[serde(rename = "healthCheckSuccessPercentage")]
+    #[serde(
+        rename = "healthCheckSuccessPercentage",
+        alias = "health_check_success_percentage"
+    )]
     pub health_check_success_percentage: Option<u32>,
     pub failover: Option<bool>,
-    #[serde(rename = "fallbackCache")]
+    #[serde(rename = "fallbackCache", alias = "fallback_cache")]
     pub fallback_cache: Option<bool>,
-    #[serde(rename = "cacheSize")]
+    #[serde(rename = "cacheSize", alias = "cache_size")]
     pub cache_size: Option<u32>,
-    #[serde(rename = "cacheTimeout")]
+    #[serde(rename = "cacheTimeout", alias = "cache_timeout")]
     pub cache_timeout: Option<u32>,
 }
 
@@ -313,11 +387,18 @@ pub enum InboundSettings {
         #[serde(default)]
         settings: Option<ChainInboundSettings>,
     },
+    Mptp {
+        #[serde(default)]
+        settings: Option<MptpInboundSettings>,
+    },
     Tun {
         #[serde(default)]
         settings: Option<TunInboundSettings>,
     },
-    Socks,
+    Socks {
+        #[serde(default)]
+        settings: Option<SocksInboundSettings>,
+    },
     Http,
 }
 
@@ -355,6 +436,14 @@ pub enum OutboundSettings {
         #[serde(default)]
         settings: Option<VMessOutboundSettings>,
     },
+    Vless {
+        #[serde(default)]
+        settings: Option<VlessOutboundSettings>,
+    },
+    Reality {
+        #[serde(default)]
+        settings: Option<RealityOutboundSettings>,
+    },
     TryAll {
         #[serde(default)]
         settings: Option<TryAllOutboundSettings>,
@@ -384,6 +473,10 @@ pub enum OutboundSettings {
         #[serde(default)]
         settings: Option<ChainOutboundSettings>,
     },
+    Mptp {
+        #[serde(default)]
+        settings: Option<MptpOutboundSettings>,
+    },
     FailOver {
         #[serde(default)]
         settings: Option<FailOverOutboundSettings>,
@@ -410,18 +503,18 @@ pub struct Rule {
     pub type_field: Option<String>,
     pub ip: Option<Vec<String>>,
     pub domain: Option<Vec<String>>,
-    #[serde(rename = "domainKeyword")]
+    #[serde(rename = "domainKeyword", alias = "domain_keyword")]
     pub domain_keyword: Option<Vec<String>>,
-    #[serde(rename = "domainSuffix")]
+    #[serde(rename = "domainSuffix", alias = "domain_suffix")]
     pub domain_suffix: Option<Vec<String>>,
     pub geoip: Option<Vec<String>>,
     pub external: Option<Vec<String>>,
-    #[serde(rename = "portRange")]
+    #[serde(rename = "portRange", alias = "port_range")]
     pub port_range: Option<Vec<String>>,
     pub network: Option<Vec<String>>,
-    #[serde(rename = "inboundTag")]
+    #[serde(rename = "inboundTag", alias = "inbound_tag")]
     pub inbound_tag: Option<Vec<String>>,
-    #[serde(rename = "processName")]
+    #[serde(rename = "processName", alias = "process_name")]
     pub process_name: Option<Vec<String>>,
     pub target: String,
 }
@@ -429,13 +522,14 @@ pub struct Rule {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Router {
     pub rules: Option<Vec<Rule>>,
-    #[serde(rename = "domainResolve")]
+    #[serde(rename = "domainResolve", alias = "domain_resolve")]
     pub domain_resolve: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Config {
     pub log: Option<Log>,
+    pub env: Option<HashMap<String, String>>,
     pub inbounds: Option<Vec<Inbound>>,
     pub outbounds: Option<Vec<Outbound>>,
     pub router: Option<Router>,
@@ -444,6 +538,17 @@ pub struct Config {
 
 fn is_inline_certificate(certificate: &str) -> bool {
     certificate.contains("-----BEGIN")
+}
+
+fn validate_non_empty_str(value: &str, field_name: &str, protocol: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "invalid [{}] settings: {} cannot be empty",
+            protocol,
+            field_name
+        ));
+    }
+    Ok(())
 }
 
 pub fn to_internal(mut config: Config) -> Result<internal::Config> {
@@ -472,6 +577,15 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                 }
             }
         }
+
+        if let Some(ext_format) = &ext_log.format {
+            match ext_format.to_lowercase().as_str() {
+                "compact" => {
+                    log.format = protobuf::EnumOrUnknown::new(internal::log::Format::COMPACT)
+                }
+                _ => log.format = protobuf::EnumOrUnknown::new(internal::log::Format::FULL),
+            }
+        }
     }
 
     let mut inbounds = Vec::new();
@@ -495,7 +609,8 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                     target_os = "ios",
                     target_os = "android",
                     target_os = "macos",
-                    target_os = "linux"
+                    target_os = "linux",
+                    target_os = "windows"
                 ))]
                 InboundSettings::Tun {
                     settings: ext_settings,
@@ -549,6 +664,17 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                 settings.mtu = 1500;
                             }
                         }
+                        if let Some(ext_tun2socks) = &ext_settings.tun2socks {
+                            settings.tun2socks = ext_tun2socks.clone();
+                        }
+                        if let Some(ext_wintun) = &ext_settings.wintun {
+                            settings.wintun = Some(ext_wintun.clone());
+                        }
+                        if let Some(ext_dns_servers) = &ext_settings.dns_servers {
+                            for ext_dns_server in ext_dns_servers {
+                                settings.dns_servers.push(ext_dns_server.clone());
+                            }
+                        }
                         let settings = settings.write_to_bytes().unwrap();
                         inbound.settings = settings;
                     }
@@ -558,7 +684,8 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                     target_os = "ios",
                     target_os = "android",
                     target_os = "macos",
-                    target_os = "linux"
+                    target_os = "linux",
+                    target_os = "windows"
                 )))]
                 InboundSettings::Tun { .. } => {
                     return Err(anyhow::anyhow!(
@@ -630,8 +757,21 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                     }
                     inbounds.push(inbound);
                 }
-                InboundSettings::Socks => {
+                InboundSettings::Socks {
+                    settings: ext_settings,
+                } => {
                     inbound.protocol = "socks".to_string();
+                    if let Some(ext_settings) = ext_settings {
+                        let mut settings = internal::SocksInboundSettings::new();
+                        if let Some(ext_username) = &ext_settings.username {
+                            settings.username = ext_username.clone();
+                        }
+                        if let Some(ext_password) = &ext_settings.password {
+                            settings.password = ext_password.clone();
+                        }
+                        let settings = settings.write_to_bytes().unwrap();
+                        inbound.settings = settings;
+                    }
                     inbounds.push(inbound);
                 }
                 InboundSettings::Http => {
@@ -712,7 +852,9 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                     inbound.protocol = "quic".to_string();
                     if let Some(ext_settings) = ext_settings {
                         let mut settings = internal::QuicInboundSettings::new();
-                        if let Some(ext_certificate) = &ext_settings.certificate {
+                        if let Some(ext_raw_certificate) = &ext_settings.raw_certificate {
+                            settings.certificate = ext_raw_certificate.join("\n");
+                        } else if let Some(ext_certificate) = &ext_settings.certificate {
                             if is_inline_certificate(ext_certificate) {
                                 settings.certificate = ext_certificate.clone();
                             } else {
@@ -726,7 +868,9 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                 }
                             }
                         }
-                        if let Some(ext_certificate_key) = &ext_settings.certificate_key {
+                        if let Some(ext_raw_certificate_key) = &ext_settings.raw_certificate_key {
+                            settings.certificate_key = ext_raw_certificate_key.join("\n");
+                        } else if let Some(ext_certificate_key) = &ext_settings.certificate_key {
                             let key = Path::new(&ext_certificate_key);
                             if key.is_absolute() {
                                 settings.certificate_key = key.to_string_lossy().to_string();
@@ -751,8 +895,26 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                 } => {
                     inbound.protocol = "tls".to_string();
                     if let Some(ext_settings) = ext_settings {
+                        if ext_settings.ech_config.is_some() || ext_settings.ech_key.is_some() {
+                            match (&ext_settings.ech_config, &ext_settings.ech_key) {
+                                (Some(ech_config), Some(ech_key)) => {
+                                    validate_non_empty_str(ech_config, "echConfig", "tls inbound")?;
+                                    validate_non_empty_str(ech_key, "echKey", "tls inbound")?;
+                                    return Err(anyhow::anyhow!(
+                                        "invalid [tls inbound] settings: inbound ECH is not supported yet; remove echConfig and echKey"
+                                    ));
+                                }
+                                _ => {
+                                    return Err(anyhow::anyhow!(
+                                        "invalid [tls inbound] settings: echConfig and echKey must be set together"
+                                    ))
+                                }
+                            }
+                        }
                         let mut settings = internal::TlsInboundSettings::new();
-                        if let Some(ext_certificate) = &ext_settings.certificate {
+                        if let Some(ext_raw_certificate) = &ext_settings.raw_certificate {
+                            settings.certificate = ext_raw_certificate.join("\n");
+                        } else if let Some(ext_certificate) = &ext_settings.certificate {
                             if is_inline_certificate(ext_certificate) {
                                 settings.certificate = ext_certificate.clone();
                             } else {
@@ -766,7 +928,9 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                 }
                             }
                         }
-                        if let Some(ext_certificate_key) = &ext_settings.certificate_key {
+                        if let Some(ext_raw_certificate_key) = &ext_settings.raw_certificate_key {
+                            settings.certificate_key = ext_raw_certificate_key.join("\n");
+                        } else if let Some(ext_certificate_key) = &ext_settings.certificate_key {
                             let key = Path::new(&ext_certificate_key);
                             if key.is_absolute() {
                                 settings.certificate_key = key.to_string_lossy().to_string();
@@ -775,6 +939,12 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                 let path = asset_loc.join(key).to_string_lossy().to_string();
                                 settings.certificate_key = path;
                             }
+                        }
+                        if let Some(ext_ech_config) = &ext_settings.ech_config {
+                            settings.ech_config = ext_ech_config.clone();
+                        }
+                        if let Some(ext_ech_key) = &ext_settings.ech_key {
+                            settings.ech_key = ext_ech_key.clone();
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         inbound.settings = settings;
@@ -797,14 +967,16 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                     }
                     inbounds.push(inbound);
                 }
-                #[cfg(not(any(
-                    target_os = "ios",
-                    target_os = "android",
-                    target_os = "macos",
-                    target_os = "linux"
-                )))]
-                InboundSettings::Tun { .. } => {
-                    return Err(anyhow::anyhow!("tun inbound not supported on this platform"));
+                InboundSettings::Mptp {
+                    settings: ext_settings,
+                } => {
+                    inbound.protocol = "mptp".to_string();
+                    if let Some(_ext_settings) = ext_settings {
+                        let settings = internal::MptpInboundSettings::new();
+                        let settings = settings.write_to_bytes().unwrap();
+                        inbound.settings = settings;
+                    }
+                    inbounds.push(inbound);
                 }
             }
         }
@@ -977,11 +1149,58 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                     }
                     outbounds.push(outbound);
                 }
+                OutboundSettings::Vless {
+                    settings: ext_settings,
+                } => {
+                    outbound.protocol = "vless".to_string();
+                    if let Some(ext_settings) = ext_settings {
+                        let mut settings = internal::VlessOutboundSettings::new();
+                        if let Some(ext_address) = &ext_settings.address {
+                            settings.address = ext_address.clone();
+                        }
+                        if let Some(ext_port) = ext_settings.port {
+                            settings.port = ext_port as u32;
+                        }
+                        if let Some(ext_uuid) = &ext_settings.uuid {
+                            settings.uuid = ext_uuid.clone();
+                        }
+                        let settings = settings.write_to_bytes().unwrap();
+                        outbound.settings = settings;
+                    }
+                    outbounds.push(outbound);
+                }
+                OutboundSettings::Reality {
+                    settings: ext_settings,
+                } => {
+                    outbound.protocol = "reality".to_string();
+                    if let Some(ext_settings) = ext_settings {
+                        let mut settings = internal::RealityOutboundSettings::new();
+                        if let Some(ext_server_name) = &ext_settings.server_name {
+                            settings.server_name = ext_server_name.clone();
+                        }
+                        if let Some(ext_public_key) = &ext_settings.public_key {
+                            settings.public_key = ext_public_key.clone();
+                        }
+                        if let Some(ext_short_id) = &ext_settings.short_id {
+                            settings.short_id = ext_short_id.clone();
+                        }
+                        let settings = settings.write_to_bytes().unwrap();
+                        outbound.settings = settings;
+                    }
+                    outbounds.push(outbound);
+                }
                 OutboundSettings::Tls {
                     settings: ext_settings,
                 } => {
                     outbound.protocol = "tls".to_string();
                     if let Some(ext_settings) = ext_settings {
+                        if let Some(ext_ech_config_list) = &ext_settings.ech_config_list {
+                            validate_non_empty_str(
+                                ext_ech_config_list,
+                                "echConfigList",
+                                "tls outbound",
+                            )?;
+                        }
                         let mut settings = internal::TlsOutboundSettings::new();
                         if let Some(ext_server_name) = &ext_settings.server_name {
                             settings.server_name = ext_server_name.clone();
@@ -989,7 +1208,9 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                         if let Some(ext_alpn) = &ext_settings.alpn {
                             settings.alpn = ext_alpn.clone();
                         }
-                        if let Some(ext_certificate) = &ext_settings.certificate {
+                        if let Some(ext_raw_certificate) = &ext_settings.raw_certificate {
+                            settings.certificate = ext_raw_certificate.join("\n");
+                        } else if let Some(ext_certificate) = &ext_settings.certificate {
                             if is_inline_certificate(ext_certificate) {
                                 settings.certificate = ext_certificate.clone();
                             } else {
@@ -1003,8 +1224,31 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                 }
                             }
                         }
+                        if let Some(ext_raw_certificate_key) = &ext_settings.raw_certificate_key {
+                            settings.certificate_key = ext_raw_certificate_key.join("\n");
+                        } else if let Some(ext_certificate_key) = &ext_settings.certificate_key {
+                            let key = Path::new(&ext_certificate_key);
+                            if key.is_absolute() {
+                                settings.certificate_key = key.to_string_lossy().to_string();
+                            } else {
+                                let asset_loc = Path::new(&*crate::option::ASSET_LOCATION);
+                                let path = asset_loc.join(key).to_string_lossy().to_string();
+                                settings.certificate_key = path;
+                            }
+                        }
                         if let Some(ext_insecure) = ext_settings.insecure {
                             settings.insecure = ext_insecure;
+                        }
+                        if let Some(ext_ech) = ext_settings.ech {
+                            settings.ech = ext_ech;
+                        }
+                        if let Some(ext_ech_disable_dns_lookup) =
+                            ext_settings.ech_disable_dns_lookup
+                        {
+                            settings.ech_disable_dns_lookup = ext_ech_disable_dns_lookup;
+                        }
+                        if let Some(ext_ech_config_list) = &ext_settings.ech_config_list {
+                            settings.ech_config_list = ext_ech_config_list.clone();
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         outbound.settings = settings;
@@ -1151,7 +1395,9 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                         if let Some(ext_server_name) = &ext_settings.server_name {
                             settings.server_name = ext_server_name.clone();
                         }
-                        if let Some(ext_certificate) = &ext_settings.certificate {
+                        if let Some(ext_raw_certificate) = &ext_settings.raw_certificate {
+                            settings.certificate = ext_raw_certificate.join("\n");
+                        } else if let Some(ext_certificate) = &ext_settings.certificate {
                             if is_inline_certificate(ext_certificate) {
                                 settings.certificate = ext_certificate.clone();
                             } else {
@@ -1163,6 +1409,18 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                     let path = asset_loc.join(cert).to_string_lossy().to_string();
                                     settings.certificate = path;
                                 }
+                            }
+                        }
+                        if let Some(ext_raw_certificate_key) = &ext_settings.raw_certificate_key {
+                            settings.certificate_key = ext_raw_certificate_key.join("\n");
+                        } else if let Some(ext_certificate_key) = &ext_settings.certificate_key {
+                            let key = Path::new(&ext_certificate_key);
+                            if key.is_absolute() {
+                                settings.certificate_key = key.to_string_lossy().to_string();
+                            } else {
+                                let asset_loc = Path::new(&*crate::option::ASSET_LOCATION);
+                                let path = asset_loc.join(key).to_string_lossy().to_string();
+                                settings.certificate_key = path;
                             }
                         }
                         if let Some(ext_alpns) = &ext_settings.alpn {
@@ -1183,6 +1441,28 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                             for ext_actor in ext_actors {
                                 settings.actors.push(ext_actor.clone());
                             }
+                        }
+                        let settings = settings.write_to_bytes().unwrap();
+                        outbound.settings = settings;
+                    }
+                    outbounds.push(outbound);
+                }
+                OutboundSettings::Mptp {
+                    settings: ext_settings,
+                } => {
+                    outbound.protocol = "mptp".to_string();
+                    if let Some(ext_settings) = ext_settings {
+                        let mut settings = internal::MptpOutboundSettings::new();
+                        if let Some(ext_actors) = &ext_settings.actors {
+                            for ext_actor in ext_actors {
+                                settings.actors.push(ext_actor.clone());
+                            }
+                        }
+                        if let Some(ext_address) = &ext_settings.address {
+                            settings.address = ext_address.clone();
+                        }
+                        if let Some(ext_port) = ext_settings.port {
+                            settings.port = ext_port as u32;
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         outbound.settings = settings;

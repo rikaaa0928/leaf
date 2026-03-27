@@ -8,11 +8,13 @@ use async_trait::async_trait;
 use futures::future::TryFutureExt;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::{app::SyncDnsClient, proxy::*, session::*};
+use crate::{app::SyncDnsClient, common::resolver::Resolver, proxy::*, session::*};
 
 pub struct Handler {
     pub address: String,
     pub port: u16,
+    pub username: String,
+    pub password: String,
     pub dns_client: SyncDnsClient,
 }
 
@@ -34,6 +36,7 @@ impl OutboundDatagramHandler for Handler {
         sess: &'a Session,
         _transport: Option<AnyOutboundTransport>,
     ) -> io::Result<AnyOutboundDatagram> {
+        tracing::trace!("handling outbound datagram");
         // TODO support chaining, this requires implementing our own socks5 client
         let stream = self
             .new_tcp_stream(self.dns_client.clone(), &self.address, &self.port)
@@ -45,17 +48,26 @@ impl OutboundDatagramHandler for Handler {
             }
         }
         let socket = self.new_udp_socket(&indicator).await?;
-        let socket = SocksDatagram::associate(
-            stream,
-            socket,
-            None::<Auth>,
-            (*SocksAddr::try_from((self.address.clone(), self.port))
-                .unwrap()
-                .must_ip())
-            .into(),
-        )
-        .map_err(Error::other)
-        .await?;
+
+        // Resolve the SOCKS server address to IP (handles both IP and domain names)
+        let mut resolver = Resolver::new(self.dns_client.clone(), &self.address, &self.port)
+            .await
+            .map_err(|e| Error::other(format!("resolve SOCKS server address failed: {}", e)))?;
+        let server_addr = resolver
+            .next()
+            .ok_or_else(|| Error::other("no resolved address for SOCKS server"))?;
+
+        let auth = match (&self.username, &self.password) {
+            (auth_username, _) if auth_username.is_empty() => None,
+            (auth_username, auth_password) => Some(Auth {
+                username: auth_username.to_owned(),
+                password: auth_password.to_owned(),
+            }),
+        };
+
+        let socket = SocksDatagram::associate(stream, socket, auth, server_addr.into())
+            .map_err(Error::other)
+            .await?;
         Ok(Box::new(Datagram { socket }))
     }
 }

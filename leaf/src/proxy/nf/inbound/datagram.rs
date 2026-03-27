@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use tracing::{trace, warn};
+use tracing::warn;
 
 use crate::{
     app::fake_dns::FakeDns,
@@ -22,6 +22,7 @@ pub struct Handler {
 #[async_trait]
 impl InboundDatagramHandler for Handler {
     async fn handle<'a>(&'a self, socket: AnyInboundDatagram) -> io::Result<AnyInboundTransport> {
+        tracing::trace!("handling inbound datagram");
         Ok(InboundTransport::Datagram(
             Box::new(Datagram {
                 socket,
