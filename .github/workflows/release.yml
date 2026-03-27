@@ -188,8 +188,60 @@ jobs:
           name: leaf-android-libs.zip
           path: leaf-android-libs.zip
 
+  build-lib-android-uniffi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: install deps
+        run: |
+          sudo apt update && sudo apt install llvm-dev libclang-dev clang libssl-dev pkg-config protobuf-compiler make -y
+
+      - name: install rust
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+
+      - name: install toolchain
+        run: |
+          cargo install cbindgen
+          apt update && apt install -y make llvm-dev libclang-dev clang pkg-config unzip curl default-jdk build-essential
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+          add-to-path: false
+
+      - name: build uniffi
+        run: |
+          export NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+          ./scripts/build_android_uniffi.sh
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: zip artifacts
+        run: |
+          zip -r leaf-android-uniffi-libs.zip jniLibs kotlin
+
+      - name: upload assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: leaf-android-uniffi-libs.zip
+          path: leaf-android-uniffi-libs.zip
+
   create-release:
-    needs: [build-cli-cross, build-cli-macos, build-lib-apple, build-lib-android]
+    needs: [build-cli-cross, build-cli-macos, build-lib-apple, build-lib-android, build-lib-android-uniffi]
     runs-on: macos-latest
     steps:
       - name: checkout
@@ -308,6 +360,11 @@ jobs:
         with:
           name: leaf-android-libs.zip
 
+      - name: download asset
+        uses: actions/download-artifact@v4
+        with:
+          name: leaf-android-uniffi-libs.zip
+
       - name: upload asset
         uses: actions/upload-release-asset@v1
         env:
@@ -326,4 +383,14 @@ jobs:
           upload_url: ${{ env.uploadurl }}
           asset_path: ./leaf-android-libs.zip
           asset_name: leaf-android-libs.zip
+          asset_content_type: application/octet-stream
+
+      - name: upload asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.uploadurl }}
+          asset_path: ./leaf-android-uniffi-libs.zip
+          asset_name: leaf-android-uniffi-libs.zip
           asset_content_type: application/octet-stream
