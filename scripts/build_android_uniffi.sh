@@ -126,10 +126,16 @@ if [ "$mode" = "" ]; then
     src_path_segment="debug"
 fi
 host_library_path="$BASE/../target/$src_path_segment/libleafuniffi.$host_lib_ext"
+if [ ! -f "$host_library_path" ]; then
+    echo "Error: Host library not found at: $host_library_path"
+    exit 1
+fi
 
 # Generate the Kotlin bindings.
-cargo run -p uniffi-bin --features=uniffi/cli --bin uniffi generate --library "$host_library_path" --language kotlin --out-dir "$kotlin_out_dir"
+echo "Generating Kotlin bindings from library: $host_library_path"
+cargo run -p uniffi-bin --features=uniffi/cli --bin uniffi generate --library "$host_library_path" --language kotlin --out-dir "$kotlin_out_dir" --no-format
 
 echo "Build finished."
+ls -R "$kotlin_out_dir"
 echo "JNI libraries are in: $jni_libs_dir"
 echo "Kotlin bindings are in: $kotlin_out_dir"
