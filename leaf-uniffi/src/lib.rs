@@ -17,6 +17,7 @@ pub enum ErrEnum {
     ErrSyncChannelRecv = 6,
     ErrRuntimeManager = 7,
     ErrNoConfigFile = 8,
+    ErrUnknown = 9,
 }
 
 fn to_errno(e: leaf::Error) -> ErrEnum {
@@ -29,6 +30,7 @@ fn to_errno(e: leaf::Error) -> ErrEnum {
         leaf::Error::AsyncChannelSend(..) => ErrEnum::ErrAsyncChannelSend,
         leaf::Error::SyncChannelRecv(..) => ErrEnum::ErrSyncChannelRecv,
         leaf::Error::RuntimeManager => ErrEnum::ErrRuntimeManager,
+        _ => ErrEnum::ErrUnknown,
     }
 }
 
@@ -147,4 +149,40 @@ pub fn leaf_test_config(config_path: String) -> ErrEnum {
         return to_errno(e);
     }
     ErrEnum::ErrOk
+}
+
+#[derive(uniffi::Record)]
+pub struct RoutingRecord {
+    pub network: String,
+    pub source: String,
+    pub destination: String,
+    pub inbound_tag: String,
+    pub outbound_tag: String,
+    pub timestamp: u64,
+}
+
+impl From<leaf::app::routing_history::RoutingRecord> for RoutingRecord {
+    fn from(r: leaf::app::routing_history::RoutingRecord) -> Self {
+        RoutingRecord {
+            network: r.network,
+            source: r.source,
+            destination: r.destination,
+            inbound_tag: r.inbound_tag,
+            outbound_tag: r.outbound_tag,
+            timestamp: r.timestamp,
+        }
+    }
+}
+
+#[uniffi::export]
+pub fn leaf_set_routing_history_enabled(rt_id: u16, enabled: bool, max_records: u32) -> bool {
+    leaf::set_routing_history_enabled(rt_id, enabled, max_records as usize)
+}
+
+#[uniffi::export]
+pub fn leaf_get_routing_history(rt_id: u16) -> Vec<RoutingRecord> {
+    leaf::get_routing_history(rt_id)
+        .into_iter()
+        .map(RoutingRecord::from)
+        .collect()
 }

@@ -20,6 +20,7 @@ use notify::{
 use app::{
     dispatcher::Dispatcher, dns_client::DnsClient, inbound::manager::InboundManager,
     nat_manager::NatManager, outbound::manager::OutboundManager, router::Router,
+    SyncRoutingHistory,
 };
 
 use crate::app::{stat_manager::StatManager, SyncStatManager};
@@ -79,6 +80,7 @@ pub struct RuntimeManager {
     dns_client: Arc<RwLock<DnsClient>>,
     outbound_manager: Arc<RwLock<OutboundManager>>,
     stat_manager: SyncStatManager,
+    routing_history: SyncRoutingHistory,
     #[cfg(feature = "auto-reload")]
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
@@ -95,6 +97,7 @@ impl RuntimeManager {
         dns_client: Arc<RwLock<DnsClient>>,
         outbound_manager: Arc<RwLock<OutboundManager>>,
         stat_manager: SyncStatManager,
+        routing_history: SyncRoutingHistory,
     ) -> Arc<Self> {
         Arc::new(Self {
             #[cfg(feature = "auto-reload")]
@@ -108,6 +111,7 @@ impl RuntimeManager {
             dns_client,
             outbound_manager,
             stat_manager,
+            routing_history,
             #[cfg(feature = "auto-reload")]
             watcher: Mutex::new(None),
         })
@@ -115,6 +119,10 @@ impl RuntimeManager {
 
     pub fn stat_manager(&self) -> SyncStatManager {
         self.stat_manager.clone()
+    }
+
+    pub fn routing_history(&self) -> SyncRoutingHistory {
+        self.routing_history.clone()
     }
 
     pub async fn health_check_outbound(
@@ -380,6 +388,21 @@ pub fn test_config(config_path: &str) -> Result<(), Error> {
         .map_err(Error::Config)
 }
 
+pub fn set_routing_history_enabled(key: RuntimeId, enabled: bool, max_records: usize) -> bool {
+    if let Some(m) = RUNTIME_MANAGER.lock().unwrap().get(&key) {
+        m.routing_history().set_enabled(enabled, max_records);
+        return true;
+    }
+    false
+}
+
+pub fn get_routing_history(key: RuntimeId) -> Vec<app::routing_history::RoutingRecord> {
+    if let Some(m) = RUNTIME_MANAGER.lock().unwrap().get(&key) {
+        return m.routing_history().get_records();
+    }
+    Vec::new()
+}
+
 fn new_runtime(opt: &RuntimeOption) -> Result<tokio::runtime::Runtime, Error> {
     match opt {
         RuntimeOption::SingleThread => tokio::runtime::Builder::new_current_thread()
@@ -467,12 +490,14 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         dns_client.clone(),
     )));
     let stat_manager = Arc::new(RwLock::new(StatManager::new()));
+    let routing_history = Arc::new(app::routing_history::RoutingHistory::new());
     runners.push(StatManager::cleanup_task(stat_manager.clone()));
     let dispatcher = Arc::new(Dispatcher::new(
         outbound_manager.clone(),
         router.clone(),
         dns_client.clone(),
         stat_manager.clone(),
+        routing_history.clone(),
     ));
 
     let dispatcher_weak = Arc::downgrade(&dispatcher);
@@ -545,6 +570,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         dns_client,
         outbound_manager,
         stat_manager,
+        routing_history,
     );
 
     // Monitor config file changes.
