@@ -232,6 +232,7 @@ jobs:
 
       - name: zip artifacts
         run: |
+          ls -R kotlin
           zip -r leaf-android-uniffi-libs.zip jniLibs kotlin
 
       - name: upload assets
