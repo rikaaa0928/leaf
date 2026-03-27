@@ -30,6 +30,8 @@ fn get_start_options(
             #[cfg(feature = "auto-reload")]
             auto_reload,
             runtime_opt: crate::RuntimeOption::SingleThread,
+            routing_history_enabled: false,
+            routing_history_max_records: 0,
         };
     }
     if auto_threads {
@@ -38,6 +40,8 @@ fn get_start_options(
             #[cfg(feature = "auto-reload")]
             auto_reload,
             runtime_opt: crate::RuntimeOption::MultiThreadAuto(stack_size),
+            routing_history_enabled: false,
+            routing_history_max_records: 0,
         };
     }
     crate::StartOptions {
@@ -45,6 +49,8 @@ fn get_start_options(
         #[cfg(feature = "auto-reload")]
         auto_reload,
         runtime_opt: crate::RuntimeOption::MultiThread(threads, stack_size),
+        routing_history_enabled: false,
+        routing_history_max_records: 0,
     }
 }
 

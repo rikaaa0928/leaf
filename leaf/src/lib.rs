@@ -162,7 +162,7 @@ impl RuntimeManager {
             timeout(to, test_tcp(dns_client.clone(), handler.clone())),
             timeout(to, test_udp(dns_client, handler)),
         )
-        .await;
+            .await;
 
         let tcp_res = match tcp_res.map_err(|e| e.into()) {
             Err(e) => Err(e),
@@ -295,8 +295,8 @@ impl RuntimeManager {
                             match ev.kind {
                                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                                 event::EventKind::Modify(event::ModifyKind::Data(
-                                    event::DataChange::Content,
-                                )) => {
+                                                             event::DataChange::Content,
+                                                         )) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
                                         warn!("reload config file failed: {}", e);
@@ -304,8 +304,8 @@ impl RuntimeManager {
                                 }
                                 #[cfg(any(target_os = "linux", target_os = "android"))]
                                 event::EventKind::Access(event::AccessKind::Close(
-                                    event::AccessMode::Write,
-                                ))
+                                                             event::AccessMode::Write,
+                                                         ))
                                 | event::EventKind::Remove(event::RemoveKind::File) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
@@ -314,8 +314,8 @@ impl RuntimeManager {
                                 }
                                 #[cfg(target_os = "windows")]
                                 event::EventKind::Modify(event::ModifyKind::Data(
-                                    event::DataChange::Any,
-                                )) => {
+                                                             event::DataChange::Any,
+                                                         )) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
                                         warn!("reload config file failed: {}", e);
@@ -339,7 +339,7 @@ impl RuntimeManager {
                         }
                     }
                 })
-                .map_err(Error::Watcher)?;
+                    .map_err(Error::Watcher)?;
             watcher
                 .watch(
                     std::path::Path::new(&config_path),
@@ -451,6 +451,9 @@ pub struct StartOptions {
     pub auto_reload: bool,
     // Tokio runtime options.
     pub runtime_opt: RuntimeOption,
+    // Routing history options.
+    pub routing_history_enabled: bool,
+    pub routing_history_max_records: usize,
 }
 
 pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
@@ -639,6 +642,10 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
 
     trace!("added runtime {}", &rt_id);
 
+    if opts.routing_history_enabled {
+        set_routing_history_enabled(rt_id, true, opts.routing_history_max_records);
+    }
+
     rt.block_on(futures::future::select_all(tasks));
 
     #[cfg(all(feature = "inbound-tun", any(target_os = "macos", target_os = "linux")))]
@@ -684,6 +691,8 @@ Direct = direct
                     #[cfg(feature = "auto-reload")]
                     auto_reload: false,
                     runtime_opt: RuntimeOption::SingleThread,
+                    routing_history_enabled: false,
+                    routing_history_max_records: 0,
                 };
                 start(0, opts).unwrap();
             });

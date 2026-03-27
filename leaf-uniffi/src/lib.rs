@@ -94,6 +94,8 @@ pub fn leaf_run(rt_id: u16, config_path: String) -> ErrEnum {
         #[cfg(feature = "auto-reload")]
         auto_reload: false,
         runtime_opt: leaf::RuntimeOption::SingleThread,
+        routing_history_enabled: false,
+        routing_history_max_records: 0,
     };
     if let Err(e) = leaf::start(rt_id, opts) {
         return to_errno(e);
@@ -102,12 +104,14 @@ pub fn leaf_run(rt_id: u16, config_path: String) -> ErrEnum {
 }
 
 #[uniffi::export]
-pub fn leaf_run_with_config_string(rt_id: u16, config: String) -> ErrEnum {
+pub fn leaf_run_with_config_string(rt_id: u16, config: String, routing_history_enabled: bool, routing_history_max_records: u32) -> ErrEnum {
     let opts = leaf::StartOptions {
         config: leaf::Config::Str(config.to_string()),
         #[cfg(feature = "auto-reload")]
         auto_reload: false,
         runtime_opt: leaf::RuntimeOption::SingleThread,
+        routing_history_enabled,
+        routing_history_max_records: routing_history_max_records as usize,
     };
     if let Err(e) = leaf::start(rt_id, opts) {
         return to_errno(e);
