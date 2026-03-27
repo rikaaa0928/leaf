@@ -100,6 +100,8 @@ pub unsafe extern "C" fn leaf_run(rt_id: u16, config_path: *const c_char) -> i32
             #[cfg(feature = "auto-reload")]
             auto_reload: false,
             runtime_opt: leaf::RuntimeOption::SingleThread,
+            routing_history_enabled: false,
+            routing_history_max_records: 0,
         };
         if let Err(e) = leaf::start(rt_id, opts) {
             return to_errno(e);
@@ -118,6 +120,8 @@ pub unsafe extern "C" fn leaf_run_with_config_string(rt_id: u16, config: *const 
             #[cfg(feature = "auto-reload")]
             auto_reload: false,
             runtime_opt: leaf::RuntimeOption::SingleThread,
+            routing_history_enabled: false,
+            routing_history_max_records: 0,
         };
         if let Err(e) = leaf::start(rt_id, opts) {
             return to_errno(e);
