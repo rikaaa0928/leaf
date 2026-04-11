@@ -16,6 +16,8 @@ pub struct Tun {
     pub netmask: Option<String>,
     pub gateway: Option<String>,
     pub mtu: Option<i32>,
+    pub up: Option<String>,
+    pub down: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -47,6 +49,8 @@ pub struct General {
     pub routing_domain_resolve: Option<bool>,
     pub wintun: Option<String>,
     pub tun_dns_server: Option<Vec<String>>,
+    pub tun_up: Option<String>,
+    pub tun_down: Option<String>,
 }
 
 #[derive(Debug)]
@@ -490,6 +494,8 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
                         continue;
                     }
                     let tun = Tun {
+                        up: None,
+                        down: None,
                         name: Some(items[0].clone()),
                         address: Some(items[1].clone()),
                         netmask: Some(items[2].clone()),
@@ -565,6 +571,12 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
             }
             "wintun" => {
                 general.wintun = get_string(parts[1]);
+            }
+            "tun-up" => {
+                general.tun_up = get_string(parts[1]);
+            }
+            "tun-down" => {
+                general.tun_down = get_string(parts[1]);
             }
             "tun-dns-server" => {
                 general.tun_dns_server = get_char_sep_slice(parts[1], ',');
@@ -1059,6 +1071,8 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                 tun2socks: ext_general.tun2socks_backend.clone(),
                 wintun: ext_general.wintun.clone(),
                 dns_servers: ext_general.tun_dns_server.clone(),
+                up: ext_general.tun_up.clone(),
+                down: ext_general.tun_down.clone(),
             };
 
             if let Some(fd) = ext_general.tun_fd {

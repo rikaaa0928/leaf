@@ -555,6 +555,10 @@ pub struct TunInboundSettings {
     pub wintun: ::std::option::Option<::std::string::String>,
     // @@protoc_insertion_point(field:TunInboundSettings.dns_servers)
     pub dns_servers: ::std::vec::Vec<::std::string::String>,
+    // @@protoc_insertion_point(field:TunInboundSettings.up)
+    pub up: ::std::string::String,
+    // @@protoc_insertion_point(field:TunInboundSettings.down)
+    pub down: ::std::string::String,
     // special fields
     // @@protoc_insertion_point(special_field:TunInboundSettings.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -618,6 +622,12 @@ impl ::protobuf::Message for TunInboundSettings {
                 98 => {
                     self.dns_servers.push(is.read_string()?);
                 },
+                106 => {
+                    self.up = is.read_string()?;
+                },
+                114 => {
+                    self.down = is.read_string()?;
+                },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
                 },
@@ -666,6 +676,12 @@ impl ::protobuf::Message for TunInboundSettings {
         for value in &self.dns_servers {
             my_size += ::protobuf::rt::string_size(12, &value);
         };
+        if !self.up.is_empty() {
+            my_size += ::protobuf::rt::string_size(13, &self.up);
+        }
+        if !self.down.is_empty() {
+            my_size += ::protobuf::rt::string_size(14, &self.down);
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -708,6 +724,12 @@ impl ::protobuf::Message for TunInboundSettings {
         for v in &self.dns_servers {
             os.write_string(12, &v)?;
         };
+        if !self.up.is_empty() {
+            os.write_string(13, &self.up)?;
+        }
+        if !self.down.is_empty() {
+            os.write_string(14, &self.down)?;
+        }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -737,6 +759,8 @@ impl ::protobuf::Message for TunInboundSettings {
         self.tun2socks.clear();
         self.wintun = ::std::option::Option::None;
         self.dns_servers.clear();
+        self.up.clear();
+        self.down.clear();
         self.special_fields.clear();
     }
 
@@ -754,6 +778,8 @@ impl ::protobuf::Message for TunInboundSettings {
             tun2socks: ::std::string::String::new(),
             wintun: ::std::option::Option::None,
             dns_servers: ::std::vec::Vec::new(),
+            up: ::std::string::String::new(),
+            down: ::std::string::String::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance

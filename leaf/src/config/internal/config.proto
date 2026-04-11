@@ -50,6 +50,8 @@ message TunInboundSettings {
 	string tun2socks = 10;
 	optional string wintun = 11;
 	repeated string dns_servers = 12;
+	string up = 13;
+	string down = 14;
 }
 
 message CatInboundSettings {

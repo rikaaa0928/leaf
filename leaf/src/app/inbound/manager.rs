@@ -408,6 +408,27 @@ impl InboundManager {
         self.tun_listener.is_some()
     }
 
+
+    #[cfg(feature = "inbound-tun")]
+    pub fn tun_up(&self) -> Option<String> {
+        if let Some(listener) = &self.tun_listener {
+            if let Ok(settings) = crate::config::TunInboundSettings::parse_from_bytes(&listener.inbound.settings) {
+                return if settings.up.is_empty() { None } else { Some(settings.up) };
+            }
+        }
+        None
+    }
+
+    #[cfg(feature = "inbound-tun")]
+    pub fn tun_down(&self) -> Option<String> {
+        if let Some(listener) = &self.tun_listener {
+            if let Ok(settings) = crate::config::TunInboundSettings::parse_from_bytes(&listener.inbound.settings) {
+                return if settings.down.is_empty() { None } else { Some(settings.down) };
+            }
+        }
+        None
+    }
+
     pub fn tun_auto(&self) -> bool {
         self.tun_auto
     }

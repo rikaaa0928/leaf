@@ -133,6 +133,8 @@ pub struct TunInboundSettings {
     pub wintun: Option<String>,
     #[serde(rename = "dnsServers", alias = "dns_servers")]
     pub dns_servers: Option<Vec<String>>,
+    pub up: Option<String>,
+    pub down: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

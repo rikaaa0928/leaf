@@ -10,6 +10,8 @@ pub struct NetInfo {
     pub ipv4_forwarding: bool,
     pub ipv6_forwarding: bool,
     pub default_interface: Option<String>,
+    pub tun_up: Option<String>,
+    pub tun_down: Option<String>,
 }
 
 pub fn get_net_info() -> NetInfo {
@@ -64,10 +66,16 @@ pub fn get_net_info() -> NetInfo {
         ipv4_forwarding,
         ipv6_forwarding,
         default_interface: Some(iface),
+        tun_up: None,
+        tun_down: None,
     }
 }
 
 pub fn post_tun_creation_setup(net_info: &NetInfo) {
+    if let Some(cmd) = &net_info.tun_up {
+        tracing::info!("executing tun up command: {}", cmd);
+        let _ = std::process::Command::new("sh").arg("-c").arg(&cmd).status();
+    }
     #[allow(unused_variables)]
     if let NetInfo {
         default_ipv4_gateway: Some(ipv4_gw),
@@ -77,6 +85,8 @@ pub fn post_tun_creation_setup(net_info: &NetInfo) {
         ipv4_forwarding,
         ipv6_forwarding,
         default_interface: Some(iface),
+        tun_up: None,
+        tun_down: None,
     } = net_info
     {
         use std::net::{Ipv4Addr, Ipv6Addr};
@@ -163,6 +173,10 @@ pub fn post_tun_creation_setup(net_info: &NetInfo) {
 }
 
 pub fn post_tun_completion_setup(net_info: &NetInfo) {
+    if let Some(cmd) = &net_info.tun_down {
+        tracing::info!("executing tun down command: {}", cmd);
+        let _ = std::process::Command::new("sh").arg("-c").arg(&cmd).status();
+    }
     #[allow(unused_variables)]
     if let NetInfo {
         default_ipv4_gateway: Some(ipv4_gw),
@@ -172,6 +186,8 @@ pub fn post_tun_completion_setup(net_info: &NetInfo) {
         ipv4_forwarding,
         ipv6_forwarding,
         default_interface: Some(iface),
+        tun_up: None,
+        tun_down: None,
     } = &net_info
     {
         use std::net::{Ipv4Addr, Ipv6Addr};
