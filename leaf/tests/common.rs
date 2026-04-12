@@ -95,6 +95,8 @@ pub fn run_leaf_instances(
             #[cfg(feature = "auto-reload")]
             auto_reload: false,
             runtime_opt: leaf::RuntimeOption::SingleThread,
+            routing_history_enabled: false,
+            routing_history_max_records: 0,
         };
         rt.spawn_blocking(move || {
             if let Err(e) = leaf::start(rt_id, opts) {

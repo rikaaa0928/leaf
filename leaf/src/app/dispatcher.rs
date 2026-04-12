@@ -34,6 +34,8 @@ use crate::app::SyncStatManager;
 
 use super::outbound::manager::OutboundManager;
 use super::router::Router;
+use super::routing_history::RoutingRecord;
+use super::SyncRoutingHistory;
 
 struct HealthcheckUdpRecvHalf {
     responded: bool,
@@ -134,6 +136,7 @@ pub struct Dispatcher {
     dns_client: SyncDnsClient,
     stat_manager: SyncStatManager,
     dns_sniffer: DnsSniffer,
+    routing_history: SyncRoutingHistory,
 }
 
 impl Dispatcher {
@@ -142,6 +145,7 @@ impl Dispatcher {
         router: Arc<RwLock<Router>>,
         dns_client: SyncDnsClient,
         stat_manager: SyncStatManager,
+        routing_history: SyncRoutingHistory,
     ) -> Self {
         Dispatcher {
             outbound_manager,
@@ -149,6 +153,7 @@ impl Dispatcher {
             dns_client,
             stat_manager,
             dns_sniffer: DnsSniffer::new(),
+            routing_history,
         }
     }
 
@@ -265,6 +270,17 @@ impl Dispatcher {
         };
 
         sess.outbound_tag = outbound.clone();
+        self.routing_history.add(RoutingRecord {
+            network: sess.network.to_string(),
+            source: sess.source.to_string(),
+            destination: sess.destination.to_string(),
+            inbound_tag: sess.inbound_tag.clone(),
+            outbound_tag: sess.outbound_tag.clone(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        });
 
         let h = if let Some(h) = self.outbound_manager.read().await.get(&outbound) {
             h
@@ -436,6 +452,17 @@ impl Dispatcher {
         };
 
         sess.outbound_tag = outbound.clone();
+        self.routing_history.add(RoutingRecord {
+            network: sess.network.to_string(),
+            source: sess.source.to_string(),
+            destination: sess.destination.to_string(),
+            inbound_tag: sess.inbound_tag.clone(),
+            outbound_tag: sess.outbound_tag.clone(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        });
 
         let h = if let Some(h) = self.outbound_manager.read().await.get(&outbound) {
             h

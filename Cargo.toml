@@ -17,6 +17,9 @@ lto = true
 panic = "abort"
 strip = "symbols"
 
+[profile.release.package.leaf-uniffi]
+strip = "none"
+
 [profile.dev]
 opt-level = 0
 debug = true

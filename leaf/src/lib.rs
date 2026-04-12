@@ -20,6 +20,7 @@ use notify::{
 use app::{
     dispatcher::Dispatcher, dns::DnsClient, inbound::manager::InboundManager,
     nat_manager::NatManager, outbound::manager::OutboundManager, router::Router,
+    SyncRoutingHistory,
 };
 
 use crate::app::{stat_manager::StatManager, SyncStatManager};
@@ -79,6 +80,7 @@ pub struct RuntimeManager {
     dns_client: Arc<RwLock<DnsClient>>,
     outbound_manager: Arc<RwLock<OutboundManager>>,
     stat_manager: SyncStatManager,
+    routing_history: SyncRoutingHistory,
     #[cfg(feature = "auto-reload")]
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
@@ -95,6 +97,7 @@ impl RuntimeManager {
         dns_client: Arc<RwLock<DnsClient>>,
         outbound_manager: Arc<RwLock<OutboundManager>>,
         stat_manager: SyncStatManager,
+        routing_history: SyncRoutingHistory,
     ) -> Arc<Self> {
         Arc::new(Self {
             #[cfg(feature = "auto-reload")]
@@ -108,6 +111,7 @@ impl RuntimeManager {
             dns_client,
             outbound_manager,
             stat_manager,
+            routing_history,
             #[cfg(feature = "auto-reload")]
             watcher: Mutex::new(None),
         })
@@ -115,6 +119,10 @@ impl RuntimeManager {
 
     pub fn stat_manager(&self) -> SyncStatManager {
         self.stat_manager.clone()
+    }
+
+    pub fn routing_history(&self) -> SyncRoutingHistory {
+        self.routing_history.clone()
     }
 
     pub async fn health_check_outbound(
@@ -154,7 +162,7 @@ impl RuntimeManager {
             timeout(to, test_tcp(dns_client.clone(), handler.clone())),
             timeout(to, test_udp(dns_client, handler)),
         )
-        .await;
+            .await;
 
         let tcp_res = match tcp_res.map_err(|e| e.into()) {
             Err(e) => Err(e),
@@ -287,8 +295,8 @@ impl RuntimeManager {
                             match ev.kind {
                                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                                 event::EventKind::Modify(event::ModifyKind::Data(
-                                    event::DataChange::Content,
-                                )) => {
+                                                             event::DataChange::Content,
+                                                         )) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
                                         warn!("reload config file failed: {}", e);
@@ -296,8 +304,8 @@ impl RuntimeManager {
                                 }
                                 #[cfg(any(target_os = "linux", target_os = "android"))]
                                 event::EventKind::Access(event::AccessKind::Close(
-                                    event::AccessMode::Write,
-                                ))
+                                                             event::AccessMode::Write,
+                                                         ))
                                 | event::EventKind::Remove(event::RemoveKind::File) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
@@ -306,8 +314,8 @@ impl RuntimeManager {
                                 }
                                 #[cfg(target_os = "windows")]
                                 event::EventKind::Modify(event::ModifyKind::Data(
-                                    event::DataChange::Any,
-                                )) => {
+                                                             event::DataChange::Any,
+                                                         )) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
                                         warn!("reload config file failed: {}", e);
@@ -331,7 +339,7 @@ impl RuntimeManager {
                         }
                     }
                 })
-                .map_err(Error::Watcher)?;
+                    .map_err(Error::Watcher)?;
             watcher
                 .watch(
                     std::path::Path::new(&config_path),
@@ -378,6 +386,21 @@ pub fn test_config(config_path: &str) -> Result<(), Error> {
     config::from_file(config_path)
         .map(|_| ())
         .map_err(Error::Config)
+}
+
+pub fn set_routing_history_enabled(key: RuntimeId, enabled: bool, max_records: usize) -> bool {
+    if let Some(m) = RUNTIME_MANAGER.lock().unwrap().get(&key) {
+        m.routing_history().set_enabled(enabled, max_records);
+        return true;
+    }
+    false
+}
+
+pub fn get_routing_history(key: RuntimeId) -> Vec<app::routing_history::RoutingRecord> {
+    if let Some(m) = RUNTIME_MANAGER.lock().unwrap().get(&key) {
+        return m.routing_history().get_records();
+    }
+    Vec::new()
 }
 
 fn new_runtime(opt: &RuntimeOption) -> Result<tokio::runtime::Runtime, Error> {
@@ -428,6 +451,9 @@ pub struct StartOptions {
     pub auto_reload: bool,
     // Tokio runtime options.
     pub runtime_opt: RuntimeOption,
+    // Routing history options.
+    pub routing_history_enabled: bool,
+    pub routing_history_max_records: usize,
 }
 
 pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
@@ -467,12 +493,14 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         dns_client.clone(),
     )));
     let stat_manager = Arc::new(RwLock::new(StatManager::new()));
+    let routing_history = Arc::new(app::routing_history::RoutingHistory::new());
     runners.push(StatManager::cleanup_task(stat_manager.clone()));
     let dispatcher = Arc::new(Dispatcher::new(
         outbound_manager.clone(),
         router.clone(),
         dns_client.clone(),
         stat_manager.clone(),
+        routing_history.clone(),
     ));
 
     let dispatcher_weak = Arc::downgrade(&dispatcher);
@@ -545,6 +573,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         dns_client,
         outbound_manager,
         stat_manager,
+        routing_history,
     );
 
     // Monitor config file changes.
@@ -613,6 +642,10 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
 
     trace!("added runtime {}", &rt_id);
 
+    if opts.routing_history_enabled {
+        set_routing_history_enabled(rt_id, true, opts.routing_history_max_records);
+    }
+
     rt.block_on(futures::future::select_all(tasks));
 
     #[cfg(all(feature = "inbound-tun", any(target_os = "macos", target_os = "linux")))]
@@ -658,6 +691,8 @@ Direct = direct
                     #[cfg(feature = "auto-reload")]
                     auto_reload: false,
                     runtime_opt: RuntimeOption::SingleThread,
+                    routing_history_enabled: false,
+                    routing_history_max_records: 0,
                 };
                 start(0, opts).unwrap();
             });
