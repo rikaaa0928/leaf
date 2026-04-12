@@ -2,27 +2,33 @@
 use std::io;
 
 #[cfg(feature = "outbound-rog")]
-use async_trait::async_trait;
-
+use crate::proxy::rog::protocol::rog::rog_service_client::RogServiceClient;
 #[cfg(feature = "outbound-rog")]
 use crate::proxy::rog::stream::RogStream;
 #[cfg(feature = "outbound-rog")]
-use crate::proxy::rog::util::RogConnector;
+use crate::proxy::rog::util::init_client;
 #[cfg(feature = "outbound-rog")]
 use crate::{proxy::*, session::*};
-
+#[cfg(feature = "outbound-rog")]
+use async_trait::async_trait;
+#[cfg(feature = "outbound-rog")]
+use std::sync::Arc;
+#[cfg(feature = "outbound-rog")]
+use tonic::transport::Channel;
 #[cfg(feature = "outbound-rog")]
 pub struct Handler {
     pub address: String,
     pub port: u16,
     pub password: String,
+    pub dns_client: SyncDnsClient,
+    pub rog_client: Arc<tokio::sync::OnceCell<RogServiceClient<Channel>>>,
 }
 
 #[cfg(feature = "outbound-rog")]
 #[async_trait]
 impl OutboundStreamHandler for Handler {
     fn connect_addr(&self) -> OutboundConnect {
-        OutboundConnect::Proxy(Network::Tcp, self.address.clone(), self.port)
+        OutboundConnect::Unknown
     }
 
     async fn handle<'a>(
@@ -31,9 +37,19 @@ impl OutboundStreamHandler for Handler {
         _lhs: Option<&mut AnyStream>,
         _stream: Option<AnyStream>,
     ) -> io::Result<AnyStream> {
-        // Create gRPC client connection with retry logic
-        let connector = RogConnector::new(&self.address, self.port);
-        let client = connector.connect().await?;
+        let schema = if self.port == 443 { "https" } else { "http" };
+        let address = self.address.clone();
+        let port = self.port;
+        let endpoint = format!("{}://{}:{}", schema, address, port);
+        let dns_client = self.dns_client.clone();
+        let password = self.password.clone();
+
+        let client = self
+            .rog_client
+            .get_or_try_init(|| async { init_client(endpoint, dns_client, port).await })
+            .await
+            .map_err(io::Error::other)?
+            .clone();
 
         // Get destination information
         let (dst_addr, dst_port) = match &sess.destination {
@@ -42,14 +58,17 @@ impl OutboundStreamHandler for Handler {
         };
 
         // Create ROG stream with error handling
-        let rog_stream = RogStream::new(client, dst_addr, dst_port, self.password.clone())
+        let rog_stream = RogStream::new(client, dst_addr, dst_port, password)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to create ROG stream: {}", e);
-                io::Error::new(io::ErrorKind::Other, format!("ROG stream creation failed: {}", e))
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("ROG stream creation failed: {}", e),
+                )
             })?;
 
-        tracing::debug!("ROG stream established to {}:{}", self.address, self.port);
+        tracing::debug!("ROG stream established to {}:{}", address, port);
         Ok(Box::new(rog_stream))
     }
 }
