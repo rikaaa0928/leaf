@@ -37,9 +37,29 @@ pub fn json_from_string(config: &str) -> Result<common::Config> {
     Ok(config)
 }
 
+#[derive(serde_derive::Deserialize)]
+struct LifecycleOnlyConfig {
+    #[serde(default)]
+    lifecycle: crate::LifecycleCommands,
+}
+
+pub fn lifecycle_from_string(config: &str) -> Result<crate::LifecycleCommands> {
+    let config: LifecycleOnlyConfig = serde_json::from_str(config)
+        .map_err(|e| anyhow!("deserialize json config failed: {}", e))?;
+    Ok(config.lifecycle)
+}
+
 pub fn from_string(s: &str) -> Result<internal::Config> {
     let config = json_from_string(s)?;
     common::to_internal(config)
+}
+
+pub fn lifecycle_from_file<P>(path: P) -> Result<crate::LifecycleCommands>
+where
+    P: AsRef<Path>,
+{
+    let config = std::fs::read_to_string(path)?;
+    lifecycle_from_string(&config)
 }
 
 pub fn from_file<P>(path: P) -> Result<internal::Config>

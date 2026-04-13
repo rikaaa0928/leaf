@@ -47,6 +47,8 @@ pub struct General {
     pub routing_domain_resolve: Option<bool>,
     pub wintun: Option<String>,
     pub tun_dns_server: Option<Vec<String>>,
+    pub post_start: Option<String>,
+    pub post_stop: Option<String>,
 }
 
 #[derive(Debug)]
@@ -472,7 +474,7 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
     let mut general = General::default();
     let general_lines = get_lines_by_section("General", lines.iter());
     for line in general_lines {
-        let parts: Vec<&str> = line.split('=').map(str::trim).collect();
+        let parts: Vec<&str> = line.splitn(2, '=').map(str::trim).collect();
         if parts.len() != 2 {
             continue;
         }
@@ -568,6 +570,12 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
             }
             "tun-dns-server" => {
                 general.tun_dns_server = get_char_sep_slice(parts[1], ',');
+            }
+            "post-start" | "on-start" => {
+                general.post_start = get_string(parts[1]);
+            }
+            "post-stop" | "on-stop" => {
+                general.post_stop = get_string(parts[1]);
             }
             _ => {}
         }
@@ -998,6 +1006,12 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
             format: ext_general.logformat.clone(),
         };
         common_config.log = Some(log);
+        if ext_general.post_start.is_some() || ext_general.post_stop.is_some() {
+            common_config.lifecycle = Some(crate::LifecycleCommands {
+                post_start: ext_general.post_start.clone(),
+                post_stop: ext_general.post_stop.clone(),
+            });
+        }
 
         let mut inbounds = Vec::new();
 
@@ -1982,6 +1996,34 @@ CERT4
         assert_eq!(certs.get("MyThirdCert").unwrap(), "CERT3\n");
         assert_eq!(certs.get("NoSpaceCert").unwrap(), "CERT4\n");
     }
+
+    #[test]
+    fn test_lifecycle_config() {
+        let conf = r#"
+[General]
+post-start = echo start=1
+post-stop = echo stop
+"#;
+        let lifecycle = lifecycle_from_string(conf).unwrap();
+        assert_eq!(lifecycle.post_start.as_deref(), Some("echo start=1"));
+        assert_eq!(lifecycle.post_stop.as_deref(), Some("echo stop"));
+    }
+
+    #[test]
+    fn test_lifecycle_config_does_not_set_process_env() {
+        let key = "LEAF_CONF_LIFECYCLE_ENV_TEST_KEY";
+        std::env::remove_var(key);
+        let conf = r#"
+[Env]
+LEAF_CONF_LIFECYCLE_ENV_TEST_KEY = conf-env-value
+
+[General]
+post-start = echo start=1
+"#;
+        let lifecycle = lifecycle_from_string(conf).unwrap();
+        assert_eq!(lifecycle.post_start.as_deref(), Some("echo start=1"));
+        assert!(std::env::var(key).is_err());
+    }
 }
 
 pub fn from_file<P>(path: P) -> Result<internal::Config>
@@ -1991,4 +2033,34 @@ where
     let lines = read_lines(path)?.collect();
     let config = from_lines(lines)?;
     to_internal(&config)
+}
+
+fn lifecycle_from_lines(lines: Vec<io::Result<String>>) -> crate::LifecycleCommands {
+    let mut lifecycle = crate::LifecycleCommands::default();
+    let general_lines = get_lines_by_section("General", lines.iter());
+    for line in general_lines {
+        let parts: Vec<&str> = line.splitn(2, '=').map(str::trim).collect();
+        if parts.len() != 2 {
+            continue;
+        }
+        match parts[0] {
+            "post-start" | "on-start" => lifecycle.post_start = get_string(parts[1]),
+            "post-stop" | "on-stop" => lifecycle.post_stop = get_string(parts[1]),
+            _ => {}
+        }
+    }
+    lifecycle
+}
+
+pub fn lifecycle_from_string(s: &str) -> Result<crate::LifecycleCommands> {
+    let lines: Vec<io::Result<String>> = s.lines().map(|line| Ok(line.to_string())).collect();
+    Ok(lifecycle_from_lines(lines))
+}
+
+pub fn lifecycle_from_file<P>(path: P) -> Result<crate::LifecycleCommands>
+where
+    P: AsRef<Path>,
+{
+    let lines = read_lines(path)?.collect();
+    Ok(lifecycle_from_lines(lines))
 }

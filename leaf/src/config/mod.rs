@@ -45,3 +45,33 @@ pub fn from_file(path: &str) -> Result<internal::Config> {
     }
     Err(anyhow!("config files use extension .json or .conf"))
 }
+
+pub fn lifecycle_from_string(s: &str) -> Result<crate::LifecycleCommands> {
+    #[cfg(feature = "config-json")]
+    {
+        if let Ok(c) = json::lifecycle_from_string(s) {
+            return Ok(c);
+        }
+    }
+    #[cfg(feature = "config-conf")]
+    {
+        return conf::lifecycle_from_string(s);
+    }
+    #[allow(unreachable_code)]
+    Err(anyhow!("could not load config from:\n{:?}", s))
+}
+
+pub fn lifecycle_from_file(path: &str) -> Result<crate::LifecycleCommands> {
+    if let Some(ext) = Path::new(path).extension() {
+        if let Some(ext) = ext.to_str() {
+            match ext {
+                #[cfg(feature = "config-json")]
+                "json" => return json::lifecycle_from_file(path),
+                #[cfg(feature = "config-conf")]
+                "conf" => return conf::lifecycle_from_file(path),
+                _ => (),
+            }
+        }
+    }
+    Err(anyhow!("config files use extension .json or .conf"))
+}

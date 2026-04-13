@@ -91,6 +91,7 @@ pub fn leaf_run_with_options(
 pub fn leaf_run(rt_id: u16, config_path: String) -> ErrEnum {
     let opts = leaf::StartOptions {
         config: leaf::Config::File(config_path.to_string()),
+        lifecycle: Default::default(),
         #[cfg(feature = "auto-reload")]
         auto_reload: false,
         runtime_opt: leaf::RuntimeOption::SingleThread,
@@ -104,9 +105,15 @@ pub fn leaf_run(rt_id: u16, config_path: String) -> ErrEnum {
 }
 
 #[uniffi::export]
-pub fn leaf_run_with_config_string(rt_id: u16, config: String, routing_history_enabled: bool, routing_history_max_records: u32) -> ErrEnum {
+pub fn leaf_run_with_config_string(
+    rt_id: u16,
+    config: String,
+    routing_history_enabled: bool,
+    routing_history_max_records: u32,
+) -> ErrEnum {
     let opts = leaf::StartOptions {
         config: leaf::Config::Str(config.to_string()),
+        lifecycle: Default::default(),
         #[cfg(feature = "auto-reload")]
         auto_reload: false,
         runtime_opt: leaf::RuntimeOption::SingleThread,
