@@ -67,6 +67,7 @@ pub struct Proxy {
 
     // shadowsocks, trojan
     pub password: Option<String>,
+    pub custom_connector: Option<bool>,
 
     // simple-obfs
     pub obfs_type: Option<String>,
@@ -115,6 +116,7 @@ impl Default for Proxy {
             encrypt_method: Some("chacha20-ietf-poly1305".to_string()),
             prefix: None,
             password: None,
+            custom_connector: None,
             obfs_type: None,
             obfs_host: None,
             obfs_path: None,
@@ -1446,6 +1448,7 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                                 address: ext_proxy.address.clone(),
                                 port: ext_proxy.port,
                                 password: ext_proxy.password.clone(),
+                                custom_connector: ext_proxy.custom_connector,
                             }),
                         },
                     });

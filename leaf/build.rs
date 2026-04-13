@@ -133,7 +133,7 @@ fn main() {
     // ROG protobuf generation
     if std::env::var("CARGO_FEATURE_OUTBOUND_ROG").is_ok() {
         if std::path::Path::new("src/proxy/rog/proto/rog.proto").exists() {
-            tonic_prost_build::compile_protos("src/proxy/rog/proto/rog.proto");
+            tonic_prost_build::compile_protos("src/proxy/rog/proto/rog.proto").unwrap();
         }
     }
 }

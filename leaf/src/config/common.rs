@@ -332,6 +332,8 @@ pub struct RogOutboundSettings {
     pub address: Option<String>,
     pub port: Option<u16>,
     pub password: Option<String>,
+    #[serde(rename = "customConnector", alias = "custom_connector")]
+    pub custom_connector: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1013,6 +1015,9 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                         }
                         if let Some(ext_password) = &ext_settings.password {
                             settings.password = ext_password.clone();
+                        }
+                        if let Some(custom_connector) = ext_settings.custom_connector {
+                            settings.custom_connector = custom_connector;
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         outbound.settings = settings;
