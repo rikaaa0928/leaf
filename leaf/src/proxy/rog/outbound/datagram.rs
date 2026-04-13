@@ -22,6 +22,7 @@ pub struct Handler {
     pub address: String,
     pub port: u16,
     pub password: String,
+    pub custom_connector: bool,
     pub dns_client: SyncDnsClient,
     pub rog_client: Arc<tokio::sync::OnceCell<RogServiceClient<Channel>>>,
 }
@@ -49,7 +50,7 @@ impl OutboundDatagramHandler for Handler {
 
         let client = self
             .rog_client
-            .get_or_try_init(|| async { init_client(endpoint, dns_client, port).await })
+            .get_or_try_init(|| async { init_client(endpoint, dns_client, port, self.custom_connector).await })
             .await
             .map_err(io::Error::other)?
             .clone();

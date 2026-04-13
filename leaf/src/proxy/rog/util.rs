@@ -28,15 +28,20 @@ pub async fn init_client(
     endpoint: String,
     dns_client: SyncDnsClient,
     port: u16,
+    custom_connector: bool,
 ) -> Result<RogServiceClient<Channel>, tonic::transport::Error> {
-    let channel = Endpoint::new(endpoint)?
-        .connect_with_connector(service_fn(move |uri: Uri| {
+    let endpoint = Endpoint::new(endpoint)?;
+    let channel = if custom_connector {
+        endpoint.connect_with_connector(service_fn(move |uri: Uri| {
             let dns_client = dns_client.clone();
             let host = uri.host().unwrap_or("localhost").to_string();
             let request_port = uri.port_u16().unwrap_or(port);
             connect_tcp(dns_client, host, request_port)
         }))
-        .await?;
+        .await?
+    } else {
+        endpoint.connect().await?
+    };
     Ok(RogServiceClient::new(channel))
 }
 
