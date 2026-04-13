@@ -886,6 +886,7 @@ Direct = direct
                 post_start: Some(format!("printf start >> '{}'", marker_text)),
                 post_stop: Some(format!("printf stop >> '{}'", marker_text)),
             },
+            #[cfg(feature = "auto-reload")]
             auto_reload: false,
             runtime_opt: RuntimeOption::SingleThread,
             routing_history_enabled: false,
