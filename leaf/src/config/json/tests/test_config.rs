@@ -160,6 +160,42 @@ fn test_env_config_sets_process_env() {
 }
 
 #[test]
+fn test_lifecycle_config() {
+    let json_str = r#"
+    {
+        "lifecycle": {
+            "postStart": "echo start",
+            "postStop": "echo stop"
+        }
+    }
+    "#;
+
+    let lifecycle = crate::config::json::lifecycle_from_string(json_str).unwrap();
+    assert_eq!(lifecycle.post_start.as_deref(), Some("echo start"));
+    assert_eq!(lifecycle.post_stop.as_deref(), Some("echo stop"));
+}
+
+#[test]
+fn test_lifecycle_config_does_not_set_process_env() {
+    let key = "LEAF_JSON_LIFECYCLE_ENV_TEST_KEY";
+    std::env::remove_var(key);
+    let json_str = r#"
+    {
+        "env": {
+            "LEAF_JSON_LIFECYCLE_ENV_TEST_KEY": "json-env-value"
+        },
+        "lifecycle": {
+            "postStart": "echo start"
+        }
+    }
+    "#;
+
+    let lifecycle = crate::config::json::lifecycle_from_string(json_str).unwrap();
+    assert_eq!(lifecycle.post_start.as_deref(), Some("echo start"));
+    assert!(std::env::var(key).is_err());
+}
+
+#[test]
 fn test_tls_outbound_ech_config_mapping() {
     let json_str = r#"
     {

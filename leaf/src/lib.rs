@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io;
+use std::process::Command;
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -67,6 +68,102 @@ pub enum Error {
 }
 
 pub type Runner = futures::future::BoxFuture<'static, ()>;
+
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(
+    feature = "config-json",
+    derive(serde_derive::Serialize, serde_derive::Deserialize)
+)]
+pub struct LifecycleCommands {
+    #[cfg_attr(
+        feature = "config-json",
+        serde(
+            default,
+            rename = "postStart",
+            alias = "post_start",
+            alias = "onStart",
+            alias = "on_start"
+        )
+    )]
+    pub post_start: Option<String>,
+    #[cfg_attr(
+        feature = "config-json",
+        serde(
+            default,
+            rename = "postStop",
+            alias = "post_stop",
+            alias = "onStop",
+            alias = "on_stop"
+        )
+    )]
+    pub post_stop: Option<String>,
+}
+
+impl LifecycleCommands {
+    fn merge(mut self, override_with: &Self) -> Self {
+        if override_with.post_start.is_some() {
+            self.post_start = override_with.post_start.clone();
+        }
+        if override_with.post_stop.is_some() {
+            self.post_stop = override_with.post_stop.clone();
+        }
+        self
+    }
+}
+
+fn resolve_lifecycle_commands(
+    config: &Config,
+    override_with: &LifecycleCommands,
+) -> Result<LifecycleCommands, Error> {
+    let from_config = match config {
+        Config::File(path) => crate::config::lifecycle_from_file(path).map_err(Error::Config)?,
+        Config::Str(content) => {
+            crate::config::lifecycle_from_string(content).map_err(Error::Config)?
+        }
+        Config::Internal(_) => LifecycleCommands::default(),
+    };
+    Ok(from_config.merge(override_with))
+}
+
+fn execute_lifecycle_command(stage: &str, command: &str) -> Result<(), Error> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Ok(());
+    }
+
+    info!("running lifecycle {} command", stage);
+    let output = if cfg!(windows) {
+        Command::new("cmd").arg("/C").arg(command).output()
+    } else {
+        Command::new("sh").arg("-c").arg(command).output()
+    }
+    .map_err(Error::Io)?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if !stdout.is_empty() {
+        info!("lifecycle {} stdout: {}", stage, stdout);
+    }
+    if !stderr.is_empty() {
+        info!("lifecycle {} stderr: {}", stage, stderr);
+    }
+
+    if output.status.success() {
+        info!("lifecycle {} command completed", stage);
+        return Ok(());
+    }
+
+    let status = output
+        .status
+        .code()
+        .map(|code| code.to_string())
+        .unwrap_or_else(|| "terminated by signal".to_string());
+    Err(Error::Io(io::Error::other(format!(
+        "lifecycle {} command failed with status {}: {}",
+        stage, status, command
+    ))))
+}
 
 pub struct RuntimeManager {
     #[cfg(feature = "auto-reload")]
@@ -446,6 +543,9 @@ pub enum Config {
 pub struct StartOptions {
     // The path of the config.
     pub config: Config,
+    // Shell commands executed after startup and after shutdown.
+    // These hooks are resolved once during startup and are not updated by auto reload.
+    pub lifecycle: LifecycleCommands,
     // Enable auto reload, take effect only when "auto-reload" feature is enabled.
     #[cfg(feature = "auto-reload")]
     pub auto_reload: bool,
@@ -459,6 +559,8 @@ pub struct StartOptions {
 pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
     #[cfg(debug_assertions)]
     println!("start with options:\n{:#?}", opts);
+
+    let lifecycle = resolve_lifecycle_commands(&opts.config, &opts.lifecycle)?;
 
     let (reload_tx, mut reload_rx) = mpsc::channel(1);
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
@@ -635,6 +737,31 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         let _ = tokio::signal::ctrl_c().await;
     }));
 
+    // Monitor SIGTERM exit signal.
+    #[cfg(all(feature = "ctrlc", unix))]
+    tasks.push(Box::pin(async move {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                let _ = signal.recv().await;
+            }
+            Err(e) => {
+                warn!("install SIGTERM signal handler failed: {}", e);
+                futures::future::pending::<()>().await;
+            }
+        }
+    }));
+
+    if let Some(command) = lifecycle.post_start.as_deref() {
+        if let Err(err) = execute_lifecycle_command("post-start", command) {
+            #[cfg(all(feature = "inbound-tun", any(target_os = "macos", target_os = "linux")))]
+            sys::post_tun_completion_setup(&net_info);
+
+            drop(inbound_manager);
+            rt.shutdown_background();
+            return Err(err);
+        }
+    }
+
     RUNTIME_MANAGER
         .lock()
         .map_err(|_| Error::RuntimeManager)?
@@ -659,6 +786,12 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         .remove(&rt_id);
 
     rt.shutdown_background();
+
+    if let Some(command) = lifecycle.post_stop.as_deref() {
+        if let Err(e) = execute_lifecycle_command("post-stop", command) {
+            warn!("running lifecycle post-stop command failed: {}", e);
+        }
+    }
 
     trace!("removed runtime {}", &rt_id);
 
@@ -688,6 +821,7 @@ Direct = direct
             thread::spawn(move || {
                 let opts = StartOptions {
                     config: Config::Str(conf.to_string()),
+                    lifecycle: Default::default(),
                     #[cfg(feature = "auto-reload")]
                     auto_reload: false,
                     runtime_opt: RuntimeOption::SingleThread,
@@ -705,5 +839,75 @@ Direct = direct
                 }
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_lifecycle_commands_run_on_shutdown() {
+        use std::fs;
+        use std::thread;
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let marker = std::env::temp_dir().join(format!("leaf-lifecycle-{}.txt", nanos));
+        let marker_text = marker.to_string_lossy().replace('\'', "'\\''");
+
+        let json = r#"
+{
+    "log": {
+        "level": "error"
+    },
+    "dns": {
+        "servers": ["1.1.1.1"]
+    },
+    "inbounds": [
+        {
+            "tag": "socks",
+            "address": "127.0.0.1",
+            "port": 0,
+            "protocol": "socks"
+        }
+    ],
+    "outbounds": [
+        {
+            "protocol": "direct",
+            "tag": "direct"
+        }
+    ]
+}
+"#;
+
+        let opts = StartOptions {
+            config: Config::Str(json.to_string()),
+            lifecycle: LifecycleCommands {
+                post_start: Some(format!("printf start >> '{}'", marker_text)),
+                post_stop: Some(format!("printf stop >> '{}'", marker_text)),
+            },
+            auto_reload: false,
+            runtime_opt: RuntimeOption::SingleThread,
+            routing_history_enabled: false,
+            routing_history_max_records: 0,
+        };
+
+        let handle = thread::spawn(move || start(42, opts));
+
+        for _ in 0..20 {
+            thread::sleep(Duration::from_millis(100));
+            if let Ok(content) = fs::read_to_string(&marker) {
+                if content.contains("start") {
+                    break;
+                }
+            }
+        }
+
+        assert!(shutdown(42));
+        assert!(handle.join().unwrap().is_ok());
+
+        let content = fs::read_to_string(&marker).unwrap();
+        assert_eq!(content, "startstop");
+        let _ = fs::remove_file(&marker);
     }
 }

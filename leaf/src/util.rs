@@ -27,6 +27,7 @@ fn get_start_options(
     if !multi_thread {
         return crate::StartOptions {
             config: crate::Config::File(config_path),
+            lifecycle: Default::default(),
             #[cfg(feature = "auto-reload")]
             auto_reload,
             runtime_opt: crate::RuntimeOption::SingleThread,
@@ -37,6 +38,7 @@ fn get_start_options(
     if auto_threads {
         return crate::StartOptions {
             config: crate::Config::File(config_path),
+            lifecycle: Default::default(),
             #[cfg(feature = "auto-reload")]
             auto_reload,
             runtime_opt: crate::RuntimeOption::MultiThreadAuto(stack_size),
@@ -46,6 +48,7 @@ fn get_start_options(
     }
     crate::StartOptions {
         config: crate::Config::File(config_path),
+        lifecycle: Default::default(),
         #[cfg(feature = "auto-reload")]
         auto_reload,
         runtime_opt: crate::RuntimeOption::MultiThread(threads, stack_size),
