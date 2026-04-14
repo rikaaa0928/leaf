@@ -46,9 +46,7 @@ impl RogStream {
         let response = client
             .stream(request)
             .await
-            .map_err(|e|{
-                io::Error::new(io::ErrorKind::Other, e)
-            })?;
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         let response_stream = response.into_inner();
 
@@ -60,7 +58,7 @@ impl RogStream {
             dst_port: Some(dst_port as u32),
         };
 
-        tx.send(auth_req).await.map_err(|e| {
+        tx.try_send(auth_req).map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("Failed to send auth: {}", e))
         })?;
 
@@ -122,9 +120,7 @@ impl AsyncRead for RogStream {
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(e))) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)))
-            }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
             Poll::Ready(None) => Poll::Ready(Ok(())), // Stream ended
             Poll::Pending => Poll::Pending,
         }
@@ -151,9 +147,7 @@ impl AsyncWrite for RogStream {
 
         match send_future.poll(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(buf.len())),
-            Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)))
-            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
             Poll::Pending => Poll::Pending,
         }
     }

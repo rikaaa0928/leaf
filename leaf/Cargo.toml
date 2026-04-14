@@ -129,7 +129,7 @@ outbound-quic = ["rustls", "webpki-roots-old", "rustls-pemfile-old"]
 outbound-mptp = []
 outbound-select = ["directories", "axum/query"]
 outbound-vmess = ["lz_fnv", "cfb-mode", "hmac", "sha2", "aes", "aes-gcm", "sha3", "digest", "md-5", "tokio-util", "byteorder", "crc32fast"]
-outbound-rog = ["tonic", "prost", "tokio-stream", "tonic-prost"]
+outbound-rog = ["tonic", "prost", "tokio-stream", "tonic-prost", "tower", "hyper-util"]
 
 # Inbounds
 inbound-trojan = ["sha2", "hex"]
@@ -262,6 +262,7 @@ tonic = { version = "0.14.2", features = ["tls-ring", "tls-webpki-roots"], optio
 prost = { version = "0.14.1", optional = true }
 tonic-prost = { version = "0.14.2", optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
+hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 
 # QUIC
 quinn = { version = "0.11", default-features = false, optional = true }
@@ -281,6 +282,7 @@ notify = { version = "6", optional = true }
 tun = { version = "0.7", features = ["async"], optional = true }
 netstack-lwip = { git = "https://github.com/eycorsican/netstack-lwip", rev = "4cc3162", optional = true }
 netstack-smoltcp = { git = "https://github.com/eycorsican/netstack-smoltcp", branch = "pr-16-initialize-unfilled", optional = true }
+tower = {version = "0.5.2", optional = true}
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ipconfig = "0.3"

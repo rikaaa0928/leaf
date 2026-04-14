@@ -39,6 +39,8 @@ use crate::proxy::quic;
 use crate::proxy::reality;
 #[cfg(feature = "outbound-redirect")]
 use crate::proxy::redirect;
+#[cfg(feature = "outbound-rog")]
+use crate::proxy::rog;
 #[cfg(feature = "outbound-shadowsocks")]
 use crate::proxy::shadowsocks;
 #[cfg(feature = "outbound-socks")]
@@ -53,8 +55,6 @@ use crate::proxy::vless;
 use crate::proxy::vmess;
 #[cfg(feature = "outbound-ws")]
 use crate::proxy::ws;
-#[cfg(feature = "outbound-rog")]
-use crate::proxy::rog;
 
 use crate::{
     app::SyncDnsClient,
@@ -276,11 +276,15 @@ impl OutboundManager {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         password: settings.password.clone(),
+                        dns_client: dns_client.clone(),
+                        rog_client: Arc::new(tokio::sync::OnceCell::new()),
                     });
                     let datagram = Arc::new(rog::outbound::DatagramHandler {
                         address: settings.address,
                         port: settings.port as u16,
                         password: settings.password,
+                        dns_client: dns_client.clone(),
+                        rog_client: Arc::new(tokio::sync::OnceCell::new()),
                     });
                     HandlerBuilder::default()
                         .tag(tag.clone())

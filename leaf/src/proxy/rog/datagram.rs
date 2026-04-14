@@ -13,9 +13,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Streaming};
 
 #[cfg(feature = "outbound-rog")]
-use crate::proxy::rog::protocol::rog::{
-    rog_service_client::RogServiceClient, UdpReq, UdpRes,
-};
+use crate::proxy::rog::protocol::rog::{rog_service_client::RogServiceClient, UdpReq, UdpRes};
 #[cfg(feature = "outbound-rog")]
 use crate::proxy::*;
 #[cfg(feature = "outbound-rog")]
@@ -53,9 +51,7 @@ impl RogDatagram {
         let response = client
             .udp(request)
             .await
-            .map_err(|e|{
-                io::Error::new(io::ErrorKind::Other, e)
-            })?;
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         let response_stream = response.into_inner();
         let shutdown = Arc::new(Notify::new());
@@ -82,10 +78,7 @@ impl OutboundDatagram for RogDatagram {
         Box<dyn OutboundDatagramRecvHalf>,
         Box<dyn OutboundDatagramSendHalf>,
     ) {
-        (
-            Box::new(self.recv_half),
-            Box::new(self.send_half),
-        )
+        (Box::new(self.recv_half), Box::new(self.send_half))
     }
 }
 
@@ -140,7 +133,7 @@ impl OutboundDatagramSendHalf for RogDatagramSendHalf {
             dst_addr: Some(addr_str),
             dst_port: Some(port),
             src_addr: Some("0.0.0.0".to_string()), // Will be set by server
-            src_port: Some(0), // Will be set by server
+            src_port: Some(0),                     // Will be set by server
         };
 
         self.tx.send(req).await.map_err(|e| {

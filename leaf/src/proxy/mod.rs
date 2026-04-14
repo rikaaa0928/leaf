@@ -66,6 +66,8 @@ pub mod quic;
 pub mod reality;
 #[cfg(feature = "outbound-redirect")]
 pub mod redirect;
+#[cfg(feature = "outbound-rog")]
+pub mod rog;
 #[cfg(feature = "outbound-select")]
 pub mod select;
 #[cfg(any(feature = "inbound-shadowsocks", feature = "outbound-shadowsocks"))]
@@ -88,8 +90,6 @@ pub mod vless;
 pub mod vmess;
 #[cfg(any(feature = "inbound-ws", feature = "outbound-ws"))]
 pub mod ws;
-#[cfg(feature = "outbound-rog")]
-pub mod rog;
 
 pub use datagram::*;
 
