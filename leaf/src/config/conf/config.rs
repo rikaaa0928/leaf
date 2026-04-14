@@ -630,6 +630,13 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
                 "password" => {
                     proxy.password = Some(v.to_string());
                 }
+                "custom-connector" | "custom_connector" => {
+                    proxy.custom_connector = if v == "true" {
+                        Some(true)
+                    } else {
+                        Some(false)
+                    }
+                }
                 "obfs" => {
                     proxy.obfs_type = Some(v.to_string());
                 }
@@ -1674,6 +1681,38 @@ Vmess = vmess, 1.2.3.4, 443, username, amux=true, sni=www.google.com
                 Some("username".to_string())
             );
         }
+    }
+
+    #[test]
+    fn test_rog_custom_connector_mapping() {
+        let conf = r#"
+[Proxy]
+ROG = rog, jp.bilibili.network, 443, password=123456, custom-connector=true
+"#;
+        let lines: Vec<io::Result<String>> = conf.lines().map(|s| Ok(s.to_string())).collect();
+        let config = from_lines(lines).unwrap();
+        let common = to_common(&config).unwrap();
+
+        let outbounds = common.outbounds.unwrap();
+        let rog = outbounds
+            .iter()
+            .find(|o| o.tag == Some("ROG".to_string()))
+            .unwrap();
+        if let common::OutboundSettings::Rog { settings } = &rog.settings {
+            let settings = settings.as_ref().unwrap();
+            assert_eq!(settings.address, Some("jp.bilibili.network".to_string()));
+            assert_eq!(settings.port, Some(443));
+            assert_eq!(settings.password, Some("123456".to_string()));
+            assert_eq!(settings.custom_connector, Some(true));
+        } else {
+            panic!("Not rog outbound: {:?}", rog.settings);
+        }
+
+        let internal = to_internal(&config).unwrap();
+        let rog = internal.outbounds.iter().find(|o| o.tag == "ROG").unwrap();
+        let settings =
+            crate::config::internal::RogOutboundSettings::parse_from_bytes(&rog.settings).unwrap();
+        assert!(settings.custom_connector);
     }
 
     #[test]
