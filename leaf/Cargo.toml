@@ -16,7 +16,7 @@ default = [
 
 default-ring = [
     "all-configs",
-    "all-endpoints",
+    "rog-endpoints",
     "ring-aead",
     "rustls-tls",
     "rustls-tls-ring",
@@ -36,7 +36,7 @@ default-aws-lc = [
 
 default-openssl = [
     "all-configs",
-    "all-endpoints",
+    "rog-endpoints",
     "openssl-aead",
     "openssl-tls",
     "quinn-ring",
