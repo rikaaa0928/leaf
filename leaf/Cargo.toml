@@ -26,7 +26,7 @@ default-ring = [
 
 default-aws-lc = [
     "all-configs",
-    "all-endpoints",
+    "rog-endpoints",
     "aws-lc-aead",
     "rustls-tls",
     "rustls-tls-aws-lc",
@@ -90,6 +90,14 @@ all-endpoints = [
     "outbound-mptp",
     "outbound-rog",
     # "outbound-select",
+]
+rog-endpoints = [
+    "inbound-http",
+    "inbound-socks",
+    "inbound-tun",
+    "outbound-direct",
+    "outbound-socks",
+    "outbound-rog",
 ]
 
 # Ring-related
