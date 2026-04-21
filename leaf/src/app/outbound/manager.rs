@@ -278,6 +278,7 @@ impl OutboundManager {
                         password: settings.password.clone(),
                         dns_client: dns_client.clone(),
                         custom_connector: settings.custom_connector,
+                        keep_alive: settings.keep_alive,
                         rog_client: Arc::new(tokio::sync::OnceCell::new()),
                     });
                     let datagram = Arc::new(rog::outbound::DatagramHandler {
@@ -286,6 +287,7 @@ impl OutboundManager {
                         password: settings.password,
                         dns_client: dns_client.clone(),
                         custom_connector: settings.custom_connector,
+                        keep_alive: settings.keep_alive,
                         rog_client: Arc::new(tokio::sync::OnceCell::new()),
                     });
                     HandlerBuilder::default()

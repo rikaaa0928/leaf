@@ -222,6 +222,7 @@ message RogOutboundSettings {
     uint32 port = 2;
     string password = 3;
     bool custom_connector = 4;
+    bool keep_alive = 5;
 }
 
 message ChainOutboundSettings {

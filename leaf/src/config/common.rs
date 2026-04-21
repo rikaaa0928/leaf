@@ -334,6 +334,8 @@ pub struct RogOutboundSettings {
     pub password: Option<String>,
     #[serde(rename = "customConnector", alias = "custom_connector")]
     pub custom_connector: Option<bool>,
+    #[serde(rename = "keepAlive", alias = "keep_alive")]
+    pub keep_alive: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1018,6 +1020,9 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                         }
                         if let Some(custom_connector) = ext_settings.custom_connector {
                             settings.custom_connector = custom_connector;
+                        }
+                        if let Some(keep_alive) = ext_settings.keep_alive {
+                            settings.keep_alive = keep_alive;
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         outbound.settings = settings;

@@ -3959,6 +3959,8 @@ pub struct RogOutboundSettings {
     pub password: ::std::string::String,
     // @@protoc_insertion_point(field:RogOutboundSettings.custom_connector)
     pub custom_connector: bool,
+    // @@protoc_insertion_point(field:RogOutboundSettings.keep_alive)
+    pub keep_alive: bool,
     // special fields
     // @@protoc_insertion_point(special_field:RogOutboundSettings.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -3998,6 +4000,9 @@ impl ::protobuf::Message for RogOutboundSettings {
                 32 => {
                     self.custom_connector = is.read_bool()?;
                 },
+                40 => {
+                    self.keep_alive = is.read_bool()?;
+                },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
                 },
@@ -4022,6 +4027,9 @@ impl ::protobuf::Message for RogOutboundSettings {
         if self.custom_connector != false {
             my_size += 1 + 1;
         }
+        if self.keep_alive != false {
+            my_size += 1 + 1;
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -4039,6 +4047,9 @@ impl ::protobuf::Message for RogOutboundSettings {
         }
         if self.custom_connector != false {
             os.write_bool(4, self.custom_connector)?;
+        }
+        if self.keep_alive != false {
+            os.write_bool(5, self.keep_alive)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -4061,6 +4072,7 @@ impl ::protobuf::Message for RogOutboundSettings {
         self.port = 0;
         self.password.clear();
         self.custom_connector = false;
+        self.keep_alive = false;
         self.special_fields.clear();
     }
 
@@ -4070,6 +4082,7 @@ impl ::protobuf::Message for RogOutboundSettings {
             port: 0,
             password: ::std::string::String::new(),
             custom_connector: false,
+            keep_alive: false,
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance

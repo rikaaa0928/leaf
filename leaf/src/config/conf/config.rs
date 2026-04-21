@@ -68,6 +68,7 @@ pub struct Proxy {
     // shadowsocks, trojan
     pub password: Option<String>,
     pub custom_connector: Option<bool>,
+    pub keep_alive: Option<bool>,
 
     // simple-obfs
     pub obfs_type: Option<String>,
@@ -117,6 +118,7 @@ impl Default for Proxy {
             prefix: None,
             password: None,
             custom_connector: None,
+            keep_alive: None,
             obfs_type: None,
             obfs_host: None,
             obfs_path: None,
@@ -632,6 +634,13 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
                 }
                 "custom-connector" | "custom_connector" => {
                     proxy.custom_connector = if v == "true" {
+                        Some(true)
+                    } else {
+                        Some(false)
+                    }
+                }
+                "keep-alive" | "keep_alive" => {
+                    proxy.keep_alive = if v == "true" {
                         Some(true)
                     } else {
                         Some(false)
@@ -1456,6 +1465,7 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                                 port: ext_proxy.port,
                                 password: ext_proxy.password.clone(),
                                 custom_connector: ext_proxy.custom_connector,
+                                keep_alive: ext_proxy.keep_alive,
                             }),
                         },
                     });

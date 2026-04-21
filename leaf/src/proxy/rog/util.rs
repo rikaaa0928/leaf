@@ -2,6 +2,8 @@
 use std::io;
 
 #[cfg(feature = "outbound-rog")]
+use std::time::Duration;
+#[cfg(feature = "outbound-rog")]
 use hyper_util::rt::TokioIo;
 #[cfg(feature = "outbound-rog")]
 use tonic::transport::{Channel, Endpoint, Uri};
@@ -29,8 +31,15 @@ pub async fn init_client(
     dns_client: SyncDnsClient,
     port: u16,
     custom_connector: bool,
+    keep_alive: bool,
 ) -> Result<RogServiceClient<Channel>, tonic::transport::Error> {
-    let endpoint = Endpoint::new(endpoint)?;
+    let mut endpoint = Endpoint::new(endpoint)?;
+    if keep_alive {
+        endpoint = endpoint
+            .http2_keep_alive_interval(Duration::from_secs(30))
+            .keep_alive_timeout(Duration::from_secs(20))
+            .keep_alive_while_idle(true);
+    }
     let channel = if custom_connector {
         endpoint.connect_with_connector(service_fn(move |uri: Uri| {
             let dns_client = dns_client.clone();
