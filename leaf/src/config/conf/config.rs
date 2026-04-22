@@ -1470,6 +1470,18 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                         },
                     });
                 }
+                "rog_tcp" | "rog-tcp" => {
+                    outbounds.push(common::Outbound {
+                        tag: Some(ext_proxy.tag.clone()),
+                        settings: common::OutboundSettings::RogTcp {
+                            settings: Some(common::RogTcpOutboundSettings {
+                                address: ext_proxy.address.clone(),
+                                port: ext_proxy.port,
+                                password: ext_proxy.password.clone(),
+                            }),
+                        },
+                    });
+                }
                 _ => {}
             }
         }
@@ -1723,6 +1735,46 @@ ROG = rog, jp.bilibili.network, 443, password=123456, custom-connector=true
         let settings =
             crate::config::internal::RogOutboundSettings::parse_from_bytes(&rog.settings).unwrap();
         assert!(settings.custom_connector);
+    }
+
+    #[test]
+    fn test_rog_tcp_mapping() {
+        let conf = r#"
+[Proxy]
+ROGTCP = rog_tcp, jp.bilibili.network, 443, password=123456
+"#;
+        let lines: Vec<io::Result<String>> = conf.lines().map(|s| Ok(s.to_string())).collect();
+        let config = from_lines(lines).unwrap();
+        let common = to_common(&config).unwrap();
+
+        let outbounds = common.outbounds.unwrap();
+        let rog_tcp = outbounds
+            .iter()
+            .find(|o| o.tag == Some("ROGTCP".to_string()))
+            .unwrap();
+        if let common::OutboundSettings::RogTcp { settings } = &rog_tcp.settings {
+            let settings = settings.as_ref().unwrap();
+            assert_eq!(settings.address, Some("jp.bilibili.network".to_string()));
+            assert_eq!(settings.port, Some(443));
+            assert_eq!(settings.password, Some("123456".to_string()));
+        } else {
+            panic!("Not rog_tcp outbound: {:?}", rog_tcp.settings);
+        }
+
+        let internal = to_internal(&config).unwrap();
+        let rog_tcp = internal
+            .outbounds
+            .iter()
+            .find(|o| o.tag == "ROGTCP")
+            .unwrap();
+        assert_eq!(rog_tcp.protocol, "rog_tcp");
+        let settings = crate::config::internal::RogOutboundSettings::parse_from_bytes(
+            &rog_tcp.settings,
+        )
+        .unwrap();
+        assert_eq!(settings.address, "jp.bilibili.network");
+        assert_eq!(settings.port, 443);
+        assert_eq!(settings.password, "123456");
     }
 
     #[test]

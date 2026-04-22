@@ -41,6 +41,8 @@ use crate::proxy::reality;
 use crate::proxy::redirect;
 #[cfg(feature = "outbound-rog")]
 use crate::proxy::rog;
+#[cfg(feature = "outbound-rog-tcp")]
+use crate::proxy::rog_tcp;
 #[cfg(feature = "outbound-shadowsocks")]
 use crate::proxy::shadowsocks;
 #[cfg(feature = "outbound-socks")]
@@ -289,6 +291,27 @@ impl OutboundManager {
                         custom_connector: settings.custom_connector,
                         keep_alive: settings.keep_alive,
                         rog_client: Arc::new(tokio::sync::OnceCell::new()),
+                    });
+                    HandlerBuilder::default()
+                        .tag(tag.clone())
+                        .stream_handler(stream)
+                        .datagram_handler(datagram)
+                        .build()
+                }
+                #[cfg(feature = "outbound-rog-tcp")]
+                "rog_tcp" => {
+                    let settings =
+                        config::RogOutboundSettings::parse_from_bytes(&outbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                    let stream = Arc::new(rog_tcp::outbound::StreamHandler {
+                        address: settings.address.clone(),
+                        port: settings.port as u16,
+                        password: settings.password.clone(),
+                    });
+                    let datagram = Arc::new(rog_tcp::outbound::DatagramHandler {
+                        address: settings.address,
+                        port: settings.port as u16,
+                        password: settings.password,
                     });
                     HandlerBuilder::default()
                         .tag(tag.clone())

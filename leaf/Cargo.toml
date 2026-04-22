@@ -89,6 +89,7 @@ all-endpoints = [
     "outbound-reality",
     "outbound-mptp",
     "outbound-rog",
+    "outbound-rog-tcp",
     # "outbound-select",
 ]
 rog-endpoints = [
@@ -98,6 +99,7 @@ rog-endpoints = [
     "outbound-direct",
     "outbound-socks",
     "outbound-rog",
+    "outbound-rog-tcp",
 ]
 
 # Ring-related
@@ -138,6 +140,7 @@ outbound-mptp = []
 outbound-select = ["directories", "axum/query"]
 outbound-vmess = ["lz_fnv", "cfb-mode", "hmac", "sha2", "aes", "aes-gcm", "sha3", "digest", "md-5", "tokio-util", "byteorder", "crc32fast"]
 outbound-rog = ["tonic", "prost", "tokio-stream", "tonic-prost", "tower", "hyper-util"]
+outbound-rog-tcp = ["tonic", "tonic-prost", "prost", "aes-gcm", "sha2", "base64"]
 
 # Inbounds
 inbound-trojan = ["sha2", "hex"]

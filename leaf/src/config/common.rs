@@ -339,6 +339,13 @@ pub struct RogOutboundSettings {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RogTcpOutboundSettings {
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    pub password: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Inbound {
     pub tag: Option<String>,
     pub address: Option<String>,
@@ -498,6 +505,11 @@ pub enum OutboundSettings {
     Rog {
         #[serde(default)]
         settings: Option<RogOutboundSettings>,
+    },
+    #[serde(rename = "rog_tcp", alias = "rog-tcp")]
+    RogTcp {
+        #[serde(default)]
+        settings: Option<RogTcpOutboundSettings>,
     },
 }
 
@@ -1023,6 +1035,26 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                         }
                         if let Some(keep_alive) = ext_settings.keep_alive {
                             settings.keep_alive = keep_alive;
+                        }
+                        let settings = settings.write_to_bytes().unwrap();
+                        outbound.settings = settings;
+                    }
+                    outbounds.push(outbound);
+                }
+                OutboundSettings::RogTcp {
+                    settings: ext_settings,
+                } => {
+                    outbound.protocol = "rog_tcp".to_string();
+                    if let Some(ext_settings) = ext_settings {
+                        let mut settings = internal::RogOutboundSettings::new();
+                        if let Some(ext_address) = &ext_settings.address {
+                            settings.address = ext_address.clone();
+                        }
+                        if let Some(ext_port) = ext_settings.port {
+                            settings.port = ext_port as u32;
+                        }
+                        if let Some(ext_password) = &ext_settings.password {
+                            settings.password = ext_password.clone();
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         outbound.settings = settings;
