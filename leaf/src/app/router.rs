@@ -693,7 +693,12 @@ mod tests {
 
         let mut sess = Session::default();
 
-        let mut ips = vec!["192.168.1.0/24".to_string(), "10.0.0.1/32".to_string()];
+        let mut ips = vec![
+            "192.168.1.0/24".to_string(),
+            "10.0.0.1/32".to_string(),
+            "2400:cb00::/32".to_string(),
+            "2a06:98c0::/29".to_string(),
+        ];
         let m = IpCidrMatcher::new(&mut ips);
 
         sess.destination = SocksAddr::from(("192.168.1.100".parse::<IpAddr>().unwrap(), 80));
@@ -706,6 +711,15 @@ mod tests {
         assert!(m.apply(&sess));
 
         sess.destination = SocksAddr::from(("10.0.0.2".parse::<IpAddr>().unwrap(), 80));
+        assert!(!m.apply(&sess));
+
+        sess.destination = SocksAddr::from(("2400:cb00::1".parse::<IpAddr>().unwrap(), 80));
+        assert!(m.apply(&sess));
+
+        sess.destination = SocksAddr::from(("2a06:98c0::1".parse::<IpAddr>().unwrap(), 80));
+        assert!(m.apply(&sess));
+
+        sess.destination = SocksAddr::from(("2606:4700::1".parse::<IpAddr>().unwrap(), 80));
         assert!(!m.apply(&sess));
     }
 }
