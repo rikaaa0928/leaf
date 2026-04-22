@@ -9,7 +9,9 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 #[cfg(feature = "outbound-rog-tcp")]
 use crate::proxy::rog_tcp::protocol::rog::{UdpReq, UdpRes};
 #[cfg(feature = "outbound-rog-tcp")]
-use crate::proxy::rog_tcp::util::{decrypt_field, encrypt_field, read_msg, write_frame};
+use crate::proxy::rog_tcp::util::{
+    decrypt_bytes, decrypt_field, encrypt_bytes, encrypt_field, read_msg, write_frame,
+};
 #[cfg(feature = "outbound-rog-tcp")]
 use crate::proxy::*;
 #[cfg(feature = "outbound-rog-tcp")]
@@ -73,6 +75,7 @@ where
         if let Some(enc) = &res.src_addr {
             res.src_addr = Some(decrypt_field(enc, &self.password)?);
         }
+        res.payload = decrypt_bytes(&res.payload, &self.password)?;
 
         let payload_len = std::cmp::min(res.payload.len(), buf.len());
         buf[..payload_len].copy_from_slice(&res.payload[..payload_len]);
@@ -126,6 +129,9 @@ where
         }
         if let Some(value) = &req.src_addr {
             req.src_addr = Some(encrypt_field(value, &self.password)?);
+        }
+        if let Some(payload) = &req.payload {
+            req.payload = Some(encrypt_bytes(payload, &self.password)?);
         }
 
         write_frame(&mut self.writer, &req).await?;

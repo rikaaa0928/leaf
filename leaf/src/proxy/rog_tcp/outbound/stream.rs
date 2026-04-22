@@ -50,6 +50,10 @@ impl OutboundStreamHandler for Handler {
         };
         write_frame(&mut stream, &auth_req).await?;
 
-        Ok(Box::new(RogTcpStream::new(stream)))
+        Ok(Box::new(RogTcpStream::new(
+            stream,
+            self.password.clone(),
+            dst_port != 443,
+        )))
     }
 }

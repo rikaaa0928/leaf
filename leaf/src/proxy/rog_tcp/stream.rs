@@ -11,7 +11,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream
 #[cfg(feature = "outbound-rog-tcp")]
 use crate::proxy::rog_tcp::protocol::rog::{StreamReq, StreamRes};
 #[cfg(feature = "outbound-rog-tcp")]
-use crate::proxy::rog_tcp::util::{read_msg, write_frame};
+use crate::proxy::rog_tcp::util::{decrypt_bytes, encrypt_bytes, read_msg, write_frame};
 #[cfg(feature = "outbound-rog-tcp")]
 use crate::proxy::AnyStream;
 
@@ -22,17 +22,18 @@ pub struct RogTcpStream {
 
 #[cfg(feature = "outbound-rog-tcp")]
 impl RogTcpStream {
-    pub fn new(stream: AnyStream) -> Self {
+    pub fn new(stream: AnyStream, password: String, encrypt: bool) -> Self {
         let (client_side, bridge_side) = tokio::io::duplex(64 * 1024);
-        spawn_bridge(stream, bridge_side);
+        spawn_bridge(stream, bridge_side, password, encrypt);
         Self { inner: client_side }
     }
 }
 
 #[cfg(feature = "outbound-rog-tcp")]
-fn spawn_bridge(stream: AnyStream, bridge: DuplexStream) {
+fn spawn_bridge(stream: AnyStream, bridge: DuplexStream, password: String, encrypt: bool) {
     let (mut net_reader, mut net_writer) = tokio::io::split(stream);
     let (mut bridge_reader, mut bridge_writer) = tokio::io::split(bridge);
+    let downlink_password = password.clone();
 
     tokio::spawn(async move {
         loop {
@@ -43,10 +44,20 @@ fn spawn_bridge(stream: AnyStream, bridge: DuplexStream) {
                     break;
                 }
             };
-            if res.payload.is_empty() {
+            let mut payload = res.payload;
+            if payload.is_empty() {
                 break;
             }
-            if let Err(err) = bridge_writer.write_all(&res.payload).await {
+            if encrypt {
+                payload = match decrypt_bytes(&payload, &downlink_password) {
+                    Ok(payload) => payload,
+                    Err(err) => {
+                        tracing::debug!("rog_tcp downlink decrypt failed: {}", err);
+                        break;
+                    }
+                };
+            }
+            if let Err(err) = bridge_writer.write_all(&payload).await {
                 tracing::debug!("rog_tcp downlink write failed: {}", err);
                 break;
             }
@@ -67,9 +78,20 @@ fn spawn_bridge(stream: AnyStream, bridge: DuplexStream) {
             if n == 0 {
                 break;
             }
+            let payload = if encrypt {
+                match encrypt_bytes(&buf[..n], &password) {
+                    Ok(payload) => payload,
+                    Err(err) => {
+                        tracing::debug!("rog_tcp uplink encrypt failed: {}", err);
+                        break;
+                    }
+                }
+            } else {
+                buf[..n].to_vec()
+            };
             let req = StreamReq {
                 auth: String::new(),
-                payload: Some(buf[..n].to_vec()),
+                payload: Some(payload),
                 dst_addr: None,
                 dst_port: None,
             };
