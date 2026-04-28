@@ -46,6 +46,7 @@ pub fn from_file(path: &str) -> Result<internal::Config> {
     Err(anyhow!("config files use extension .json or .conf"))
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 pub fn lifecycle_from_string(s: &str) -> Result<crate::LifecycleCommands> {
     #[cfg(feature = "config-json")]
     {
@@ -61,6 +62,7 @@ pub fn lifecycle_from_string(s: &str) -> Result<crate::LifecycleCommands> {
     Err(anyhow!("could not load config from:\n{:?}", s))
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 pub fn lifecycle_from_file(path: &str) -> Result<crate::LifecycleCommands> {
     if let Some(ext) = Path::new(path).extension() {
         if let Some(ext) = ext.to_str() {

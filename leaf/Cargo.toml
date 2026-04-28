@@ -16,7 +16,7 @@ default = [
 
 default-ring = [
     "all-configs",
-    "rog-endpoints",
+    "all-endpoints",
     "ring-aead",
     "rustls-tls",
     "rustls-tls-ring",
@@ -26,7 +26,7 @@ default-ring = [
 
 default-aws-lc = [
     "all-configs",
-    "rog-endpoints",
+    "all-endpoints",
     "aws-lc-aead",
     "rustls-tls",
     "rustls-tls-aws-lc",
@@ -36,10 +36,33 @@ default-aws-lc = [
 
 default-openssl = [
     "all-configs",
-    "rog-endpoints",
+    "all-endpoints",
     "openssl-aead",
     "openssl-tls",
     "quinn-ring",
+]
+
+rog-default-ring = [
+    "all-configs",
+    "rog-endpoints",
+    "ring-aead",
+    "rustls-tls",
+    "rustls-tls-ring",
+]
+
+rog-default-aws-lc = [
+    "all-configs",
+    "rog-endpoints",
+    "aws-lc-aead",
+    "rustls-tls",
+    "rustls-tls-aws-lc",
+]
+
+rog-default-openssl = [
+    "all-configs",
+    "rog-endpoints",
+    "openssl-aead",
+    "openssl-tls",
 ]
 
 rustls-tls-aws-lc = ["tokio-rustls/aws_lc_rs", "rustls/aws_lc_rs"]
@@ -162,6 +185,8 @@ plugin = ["async-ffi", "libloading"]
 api = ["axum"]
 auto-reload = ["notify"]
 ctrlc = ["tokio/signal"]
+lifecycle-hooks = []
+routing-history = []
 
 [dependencies]
 # Common

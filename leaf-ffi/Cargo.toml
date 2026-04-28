@@ -28,6 +28,8 @@ default-openssl = [
 ]
 
 auto-reload = ["leaf/auto-reload"]
+lifecycle-hooks = ["leaf/lifecycle-hooks"]
+routing-history = ["leaf/routing-history"]
 
 [dependencies]
 leaf = { path = "../leaf", default-features = false, optional = true }

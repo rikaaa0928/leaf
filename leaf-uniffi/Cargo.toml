@@ -13,18 +13,22 @@ crate-type = ["cdylib"]
 default = [
     "default-ring",
     "auto-reload",
+    "routing-history",
 ]
 
 default-aws-lc= [
-    "leaf/default-aws-lc",
+    "leaf/rog-default-aws-lc",
+    "lifecycle-hooks",
 ]
 
 default-ring = [
-    "leaf/default-ring",
+    "leaf/rog-default-ring",
+    "lifecycle-hooks",
 ]
 
 default-openssl = [
-    "leaf/default-openssl",
+    "leaf/rog-default-openssl",
+    "lifecycle-hooks",
 ]
 
 outbound-quic = [
@@ -32,6 +36,8 @@ outbound-quic = [
 ]
 
 auto-reload = ["leaf/auto-reload"]
+lifecycle-hooks = ["leaf/lifecycle-hooks"]
+routing-history = ["leaf/routing-history"]
 
 [dependencies]
 leaf = { path = "../leaf", default-features = false, optional = true }

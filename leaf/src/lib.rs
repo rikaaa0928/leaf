@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::io;
-use std::process::Command;
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -18,10 +17,11 @@ use notify::{
     event, Error as NotifyError, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher,
 };
 
+#[cfg(feature = "routing-history")]
+use app::SyncRoutingHistory;
 use app::{
     dispatcher::Dispatcher, dns::DnsClient, inbound::manager::InboundManager,
     nat_manager::NatManager, outbound::manager::OutboundManager, router::Router,
-    SyncRoutingHistory,
 };
 
 use crate::app::{stat_manager::StatManager, SyncStatManager};
@@ -69,6 +69,7 @@ pub enum Error {
 
 pub type Runner = futures::future::BoxFuture<'static, ()>;
 
+#[cfg(feature = "lifecycle-hooks")]
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "config-json",
@@ -99,70 +100,12 @@ pub struct LifecycleCommands {
     pub post_stop: Option<String>,
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 impl LifecycleCommands {
-    fn merge(mut self, override_with: &Self) -> Self {
-        if override_with.post_start.is_some() {
-            self.post_start = override_with.post_start.clone();
-        }
-        if override_with.post_stop.is_some() {
-            self.post_stop = override_with.post_stop.clone();
-        }
-        self
+    pub fn is_empty(&self) -> bool {
+        self.post_start.as_deref().unwrap_or("").trim().is_empty()
+            && self.post_stop.as_deref().unwrap_or("").trim().is_empty()
     }
-}
-
-fn resolve_lifecycle_commands(
-    config: &Config,
-    override_with: &LifecycleCommands,
-) -> Result<LifecycleCommands, Error> {
-    let from_config = match config {
-        Config::File(path) => crate::config::lifecycle_from_file(path).map_err(Error::Config)?,
-        Config::Str(content) => {
-            crate::config::lifecycle_from_string(content).map_err(Error::Config)?
-        }
-        Config::Internal(_) => LifecycleCommands::default(),
-    };
-    Ok(from_config.merge(override_with))
-}
-
-fn execute_lifecycle_command(stage: &str, command: &str) -> Result<(), Error> {
-    let command = command.trim();
-    if command.is_empty() {
-        return Ok(());
-    }
-
-    info!("running lifecycle {} command", stage);
-    let output = if cfg!(windows) {
-        Command::new("cmd").arg("/C").arg(command).output()
-    } else {
-        Command::new("sh").arg("-c").arg(command).output()
-    }
-    .map_err(Error::Io)?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
-    if !stdout.is_empty() {
-        info!("lifecycle {} stdout: {}", stage, stdout);
-    }
-    if !stderr.is_empty() {
-        info!("lifecycle {} stderr: {}", stage, stderr);
-    }
-
-    if output.status.success() {
-        info!("lifecycle {} command completed", stage);
-        return Ok(());
-    }
-
-    let status = output
-        .status
-        .code()
-        .map(|code| code.to_string())
-        .unwrap_or_else(|| "terminated by signal".to_string());
-    Err(Error::Io(io::Error::other(format!(
-        "lifecycle {} command failed with status {}: {}",
-        stage, status, command
-    ))))
 }
 
 pub struct RuntimeManager {
@@ -177,6 +120,7 @@ pub struct RuntimeManager {
     dns_client: Arc<RwLock<DnsClient>>,
     outbound_manager: Arc<RwLock<OutboundManager>>,
     stat_manager: SyncStatManager,
+    #[cfg(feature = "routing-history")]
     routing_history: SyncRoutingHistory,
     #[cfg(feature = "auto-reload")]
     watcher: Mutex<Option<RecommendedWatcher>>,
@@ -194,7 +138,7 @@ impl RuntimeManager {
         dns_client: Arc<RwLock<DnsClient>>,
         outbound_manager: Arc<RwLock<OutboundManager>>,
         stat_manager: SyncStatManager,
-        routing_history: SyncRoutingHistory,
+        #[cfg(feature = "routing-history")] routing_history: SyncRoutingHistory,
     ) -> Arc<Self> {
         Arc::new(Self {
             #[cfg(feature = "auto-reload")]
@@ -208,6 +152,7 @@ impl RuntimeManager {
             dns_client,
             outbound_manager,
             stat_manager,
+            #[cfg(feature = "routing-history")]
             routing_history,
             #[cfg(feature = "auto-reload")]
             watcher: Mutex::new(None),
@@ -218,6 +163,7 @@ impl RuntimeManager {
         self.stat_manager.clone()
     }
 
+    #[cfg(feature = "routing-history")]
     pub fn routing_history(&self) -> SyncRoutingHistory {
         self.routing_history.clone()
     }
@@ -485,6 +431,7 @@ pub fn test_config(config_path: &str) -> Result<(), Error> {
         .map_err(Error::Config)
 }
 
+#[cfg(feature = "routing-history")]
 pub fn set_routing_history_enabled(key: RuntimeId, enabled: bool, max_records: usize) -> bool {
     if let Some(m) = RUNTIME_MANAGER.lock().unwrap().get(&key) {
         m.routing_history().set_enabled(enabled, max_records);
@@ -493,6 +440,7 @@ pub fn set_routing_history_enabled(key: RuntimeId, enabled: bool, max_records: u
     false
 }
 
+#[cfg(feature = "routing-history")]
 pub fn get_routing_history(key: RuntimeId) -> Vec<app::routing_history::RoutingRecord> {
     if let Some(m) = RUNTIME_MANAGER.lock().unwrap().get(&key) {
         return m.routing_history().get_records();
@@ -543,24 +491,21 @@ pub enum Config {
 pub struct StartOptions {
     // The path of the config.
     pub config: Config,
-    // Shell commands executed after startup and after shutdown.
-    // These hooks are resolved once during startup and are not updated by auto reload.
-    pub lifecycle: LifecycleCommands,
     // Enable auto reload, take effect only when "auto-reload" feature is enabled.
     #[cfg(feature = "auto-reload")]
     pub auto_reload: bool,
     // Tokio runtime options.
     pub runtime_opt: RuntimeOption,
+    #[cfg(feature = "routing-history")]
     // Routing history options.
     pub routing_history_enabled: bool,
+    #[cfg(feature = "routing-history")]
     pub routing_history_max_records: usize,
 }
 
 pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
     #[cfg(debug_assertions)]
     println!("start with options:\n{:#?}", opts);
-
-    let lifecycle = resolve_lifecycle_commands(&opts.config, &opts.lifecycle)?;
 
     let (reload_tx, mut reload_rx) = mpsc::channel(1);
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
@@ -595,6 +540,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         dns_client.clone(),
     )));
     let stat_manager = Arc::new(RwLock::new(StatManager::new()));
+    #[cfg(feature = "routing-history")]
     let routing_history = Arc::new(app::routing_history::RoutingHistory::new());
     runners.push(StatManager::cleanup_task(stat_manager.clone()));
     let dispatcher = Arc::new(Dispatcher::new(
@@ -602,6 +548,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         router.clone(),
         dns_client.clone(),
         stat_manager.clone(),
+        #[cfg(feature = "routing-history")]
         routing_history.clone(),
     ));
 
@@ -675,6 +622,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         dns_client,
         outbound_manager,
         stat_manager,
+        #[cfg(feature = "routing-history")]
         routing_history,
     );
 
@@ -751,17 +699,6 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         }
     }));
 
-    if let Some(command) = lifecycle.post_start.as_deref() {
-        if let Err(err) = execute_lifecycle_command("post-start", command) {
-            #[cfg(all(feature = "inbound-tun", any(target_os = "macos", target_os = "linux")))]
-            sys::post_tun_completion_setup(&net_info);
-
-            drop(inbound_manager);
-            rt.shutdown_background();
-            return Err(err);
-        }
-    }
-
     RUNTIME_MANAGER
         .lock()
         .map_err(|_| Error::RuntimeManager)?
@@ -769,6 +706,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
 
     trace!("added runtime {}", &rt_id);
 
+    #[cfg(feature = "routing-history")]
     if opts.routing_history_enabled {
         set_routing_history_enabled(rt_id, true, opts.routing_history_max_records);
     }
@@ -786,12 +724,6 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         .remove(&rt_id);
 
     rt.shutdown_background();
-
-    if let Some(command) = lifecycle.post_stop.as_deref() {
-        if let Err(e) = execute_lifecycle_command("post-stop", command) {
-            warn!("running lifecycle post-stop command failed: {}", e);
-        }
-    }
 
     trace!("removed runtime {}", &rt_id);
 
@@ -821,11 +753,12 @@ Direct = direct
             thread::spawn(move || {
                 let opts = StartOptions {
                     config: Config::Str(conf.to_string()),
-                    lifecycle: Default::default(),
                     #[cfg(feature = "auto-reload")]
                     auto_reload: false,
                     runtime_opt: RuntimeOption::SingleThread,
+                    #[cfg(feature = "routing-history")]
                     routing_history_enabled: false,
+                    #[cfg(feature = "routing-history")]
                     routing_history_max_records: 0,
                 };
                 start(0, opts).unwrap();
@@ -839,76 +772,5 @@ Direct = direct
                 }
             }
         }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_lifecycle_commands_run_on_shutdown() {
-        use std::fs;
-        use std::thread;
-        use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let marker = std::env::temp_dir().join(format!("leaf-lifecycle-{}.txt", nanos));
-        let marker_text = marker.to_string_lossy().replace('\'', "'\\''");
-
-        let json = r#"
-{
-    "log": {
-        "level": "error"
-    },
-    "dns": {
-        "servers": ["1.1.1.1"]
-    },
-    "inbounds": [
-        {
-            "tag": "socks",
-            "address": "127.0.0.1",
-            "port": 0,
-            "protocol": "socks"
-        }
-    ],
-    "outbounds": [
-        {
-            "protocol": "direct",
-            "tag": "direct"
-        }
-    ]
-}
-"#;
-
-        let opts = StartOptions {
-            config: Config::Str(json.to_string()),
-            lifecycle: LifecycleCommands {
-                post_start: Some(format!("printf start >> '{}'", marker_text)),
-                post_stop: Some(format!("printf stop >> '{}'", marker_text)),
-            },
-            #[cfg(feature = "auto-reload")]
-            auto_reload: false,
-            runtime_opt: RuntimeOption::SingleThread,
-            routing_history_enabled: false,
-            routing_history_max_records: 0,
-        };
-
-        let handle = thread::spawn(move || start(42, opts));
-
-        for _ in 0..20 {
-            thread::sleep(Duration::from_millis(100));
-            if let Ok(content) = fs::read_to_string(&marker) {
-                if content.contains("start") {
-                    break;
-                }
-            }
-        }
-
-        assert!(shutdown(42));
-        assert!(handle.join().unwrap().is_ok());
-
-        let content = fs::read_to_string(&marker).unwrap();
-        assert_eq!(content, "startstop");
-        let _ = fs::remove_file(&marker);
     }
 }

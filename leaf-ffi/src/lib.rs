@@ -97,14 +97,15 @@ pub unsafe extern "C" fn leaf_run(rt_id: u16, config_path: *const c_char) -> i32
     if let Ok(config_path) = unsafe { CStr::from_ptr(config_path).to_str() } {
         let opts = leaf::StartOptions {
             config: leaf::Config::File(config_path.to_string()),
-            lifecycle: Default::default(),
             #[cfg(feature = "auto-reload")]
             auto_reload: false,
             runtime_opt: leaf::RuntimeOption::SingleThread,
+            #[cfg(feature = "routing-history")]
             routing_history_enabled: false,
+            #[cfg(feature = "routing-history")]
             routing_history_max_records: 0,
         };
-        if let Err(e) = leaf::start(rt_id, opts) {
+        if let Err(e) = leaf::util::start_with_lifecycle(rt_id, opts) {
             return to_errno(e);
         }
         ERR_OK
@@ -118,14 +119,15 @@ pub unsafe extern "C" fn leaf_run_with_config_string(rt_id: u16, config: *const 
     if let Ok(config) = unsafe { CStr::from_ptr(config).to_str() } {
         let opts = leaf::StartOptions {
             config: leaf::Config::Str(config.to_string()),
-            lifecycle: Default::default(),
             #[cfg(feature = "auto-reload")]
             auto_reload: false,
             runtime_opt: leaf::RuntimeOption::SingleThread,
+            #[cfg(feature = "routing-history")]
             routing_history_enabled: false,
+            #[cfg(feature = "routing-history")]
             routing_history_max_records: 0,
         };
-        if let Err(e) = leaf::start(rt_id, opts) {
+        if let Err(e) = leaf::util::start_with_lifecycle(rt_id, opts) {
             return to_errno(e);
         }
         ERR_OK

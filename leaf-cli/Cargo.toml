@@ -22,7 +22,8 @@ mimalloc = { version = "0.1", default-features = false }
 path = "../leaf"
 default-features = false
 features = [
-  "default-aws-lc",
+  "rog-default-aws-lc",
+  "lifecycle-hooks",
   "ctrlc",
   "auto-reload"
 ]
@@ -31,9 +32,8 @@ features = [
 path = "../leaf"
 default-features = false
 features = [
-  "default-aws-lc",
+  "rog-default-aws-lc",
+  "lifecycle-hooks",
   "ctrlc",
-  "auto-reload",
-  "inbound-nf",
-  "rule-process-name"
+  "auto-reload"
 ]

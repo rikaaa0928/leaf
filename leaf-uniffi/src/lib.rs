@@ -91,14 +91,15 @@ pub fn leaf_run_with_options(
 pub fn leaf_run(rt_id: u16, config_path: String) -> ErrEnum {
     let opts = leaf::StartOptions {
         config: leaf::Config::File(config_path.to_string()),
-        lifecycle: Default::default(),
         #[cfg(feature = "auto-reload")]
         auto_reload: false,
         runtime_opt: leaf::RuntimeOption::SingleThread,
+        #[cfg(feature = "routing-history")]
         routing_history_enabled: false,
+        #[cfg(feature = "routing-history")]
         routing_history_max_records: 0,
     };
-    if let Err(e) = leaf::start(rt_id, opts) {
+    if let Err(e) = leaf::util::start_with_lifecycle(rt_id, opts) {
         return to_errno(e);
     }
     ErrEnum::ErrOk
@@ -113,14 +114,15 @@ pub fn leaf_run_with_config_string(
 ) -> ErrEnum {
     let opts = leaf::StartOptions {
         config: leaf::Config::Str(config.to_string()),
-        lifecycle: Default::default(),
         #[cfg(feature = "auto-reload")]
         auto_reload: false,
         runtime_opt: leaf::RuntimeOption::SingleThread,
+        #[cfg(feature = "routing-history")]
         routing_history_enabled,
+        #[cfg(feature = "routing-history")]
         routing_history_max_records: routing_history_max_records as usize,
     };
-    if let Err(e) = leaf::start(rt_id, opts) {
+    if let Err(e) = leaf::util::start_with_lifecycle(rt_id, opts) {
         return to_errno(e);
     }
     ErrEnum::ErrOk
@@ -162,6 +164,7 @@ pub fn leaf_test_config(config_path: String) -> ErrEnum {
     ErrEnum::ErrOk
 }
 
+#[cfg(feature = "routing-history")]
 #[derive(uniffi::Record)]
 pub struct RoutingRecord {
     pub network: String,
@@ -172,6 +175,7 @@ pub struct RoutingRecord {
     pub timestamp: u64,
 }
 
+#[cfg(feature = "routing-history")]
 impl From<leaf::app::routing_history::RoutingRecord> for RoutingRecord {
     fn from(r: leaf::app::routing_history::RoutingRecord) -> Self {
         RoutingRecord {
@@ -185,11 +189,13 @@ impl From<leaf::app::routing_history::RoutingRecord> for RoutingRecord {
     }
 }
 
+#[cfg(feature = "routing-history")]
 #[uniffi::export]
 pub fn leaf_set_routing_history_enabled(rt_id: u16, enabled: bool, max_records: u32) -> bool {
     leaf::set_routing_history_enabled(rt_id, enabled, max_records as usize)
 }
 
+#[cfg(feature = "routing-history")]
 #[uniffi::export]
 pub fn leaf_get_routing_history(rt_id: u16) -> Vec<RoutingRecord> {
     leaf::get_routing_history(rt_id)

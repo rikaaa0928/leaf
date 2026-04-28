@@ -37,12 +37,14 @@ pub fn json_from_string(config: &str) -> Result<common::Config> {
     Ok(config)
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 #[derive(serde_derive::Deserialize)]
 struct LifecycleOnlyConfig {
     #[serde(default)]
     lifecycle: crate::LifecycleCommands,
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 pub fn lifecycle_from_string(config: &str) -> Result<crate::LifecycleCommands> {
     let config: LifecycleOnlyConfig = serde_json::from_str(config)
         .map_err(|e| anyhow!("deserialize json config failed: {}", e))?;
@@ -54,6 +56,7 @@ pub fn from_string(s: &str) -> Result<internal::Config> {
     common::to_internal(config)
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 pub fn lifecycle_from_file<P>(path: P) -> Result<crate::LifecycleCommands>
 where
     P: AsRef<Path>,

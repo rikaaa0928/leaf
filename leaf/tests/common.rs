@@ -92,11 +92,12 @@ pub fn run_leaf_instances(
             .map_err(|e| anyhow::anyhow!("parse config failed: {}", e))?;
         let opts = leaf::StartOptions {
             config: leaf::Config::Internal(config),
-            lifecycle: Default::default(),
             #[cfg(feature = "auto-reload")]
             auto_reload: false,
             runtime_opt: leaf::RuntimeOption::SingleThread,
+            #[cfg(feature = "routing-history")]
             routing_history_enabled: false,
+            #[cfg(feature = "routing-history")]
             routing_history_max_records: 0,
         };
         rt.spawn_blocking(move || {
@@ -131,6 +132,7 @@ fn new_socks_outbound(
     let config = leaf::config::json::Config {
         log: None,
         env: None,
+        #[cfg(feature = "lifecycle-hooks")]
         lifecycle: None,
         inbounds: None,
         outbounds: Some(outbounds),

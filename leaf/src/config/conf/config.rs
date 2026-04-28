@@ -47,7 +47,9 @@ pub struct General {
     pub routing_domain_resolve: Option<bool>,
     pub wintun: Option<String>,
     pub tun_dns_server: Option<Vec<String>>,
+    #[cfg(feature = "lifecycle-hooks")]
     pub post_start: Option<String>,
+    #[cfg(feature = "lifecycle-hooks")]
     pub post_stop: Option<String>,
 }
 
@@ -575,9 +577,11 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
             "tun-dns-server" => {
                 general.tun_dns_server = get_char_sep_slice(parts[1], ',');
             }
+            #[cfg(feature = "lifecycle-hooks")]
             "post-start" | "on-start" => {
                 general.post_start = get_string(parts[1]);
             }
+            #[cfg(feature = "lifecycle-hooks")]
             "post-stop" | "on-stop" => {
                 general.post_stop = get_string(parts[1]);
             }
@@ -633,18 +637,10 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
                     proxy.password = Some(v.to_string());
                 }
                 "custom-connector" | "custom_connector" => {
-                    proxy.custom_connector = if v == "true" {
-                        Some(true)
-                    } else {
-                        Some(false)
-                    }
+                    proxy.custom_connector = if v == "true" { Some(true) } else { Some(false) }
                 }
                 "keep-alive" | "keep_alive" => {
-                    proxy.keep_alive = if v == "true" {
-                        Some(true)
-                    } else {
-                        Some(false)
-                    }
+                    proxy.keep_alive = if v == "true" { Some(true) } else { Some(false) }
                 }
                 "obfs" => {
                     proxy.obfs_type = Some(v.to_string());
@@ -1024,6 +1020,7 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
             format: ext_general.logformat.clone(),
         };
         common_config.log = Some(log);
+        #[cfg(feature = "lifecycle-hooks")]
         if ext_general.post_start.is_some() || ext_general.post_stop.is_some() {
             common_config.lifecycle = Some(crate::LifecycleCommands {
                 post_start: ext_general.post_start.clone(),
@@ -1768,10 +1765,9 @@ ROGTCP = rog_tcp, jp.bilibili.network, 443, password=123456
             .find(|o| o.tag == "ROGTCP")
             .unwrap();
         assert_eq!(rog_tcp.protocol, "rog_tcp");
-        let settings = crate::config::internal::RogOutboundSettings::parse_from_bytes(
-            &rog_tcp.settings,
-        )
-        .unwrap();
+        let settings =
+            crate::config::internal::RogOutboundSettings::parse_from_bytes(&rog_tcp.settings)
+                .unwrap();
         assert_eq!(settings.address, "jp.bilibili.network");
         assert_eq!(settings.port, 443);
         assert_eq!(settings.password, "123456");
@@ -2101,6 +2097,7 @@ CERT4
         assert_eq!(certs.get("NoSpaceCert").unwrap(), "CERT4\n");
     }
 
+    #[cfg(feature = "lifecycle-hooks")]
     #[test]
     fn test_lifecycle_config() {
         let conf = r#"
@@ -2113,6 +2110,7 @@ post-stop = echo stop
         assert_eq!(lifecycle.post_stop.as_deref(), Some("echo stop"));
     }
 
+    #[cfg(feature = "lifecycle-hooks")]
     #[test]
     fn test_lifecycle_config_does_not_set_process_env() {
         let key = "LEAF_CONF_LIFECYCLE_ENV_TEST_KEY";
@@ -2139,6 +2137,7 @@ where
     to_internal(&config)
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 fn lifecycle_from_lines(lines: Vec<io::Result<String>>) -> crate::LifecycleCommands {
     let mut lifecycle = crate::LifecycleCommands::default();
     let general_lines = get_lines_by_section("General", lines.iter());
@@ -2156,11 +2155,13 @@ fn lifecycle_from_lines(lines: Vec<io::Result<String>>) -> crate::LifecycleComma
     lifecycle
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 pub fn lifecycle_from_string(s: &str) -> Result<crate::LifecycleCommands> {
     let lines: Vec<io::Result<String>> = s.lines().map(|line| Ok(line.to_string())).collect();
     Ok(lifecycle_from_lines(lines))
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 pub fn lifecycle_from_file<P>(path: P) -> Result<crate::LifecycleCommands>
 where
     P: AsRef<Path>,

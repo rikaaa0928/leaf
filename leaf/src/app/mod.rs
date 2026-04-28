@@ -10,6 +10,7 @@ pub mod logger;
 pub mod nat_manager;
 pub mod outbound;
 pub mod router;
+#[cfg(feature = "routing-history")]
 pub mod routing_history;
 pub mod stat_manager;
 
@@ -26,4 +27,5 @@ pub type SyncDnsClient = Arc<RwLock<dns::DnsClient>>;
 
 pub type SyncStatManager = Arc<RwLock<stat_manager::StatManager>>;
 
+#[cfg(feature = "routing-history")]
 pub type SyncRoutingHistory = Arc<routing_history::RoutingHistory>;

@@ -159,6 +159,7 @@ fn test_env_config_sets_process_env() {
     std::env::remove_var(key);
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 #[test]
 fn test_lifecycle_config() {
     let json_str = r#"
@@ -175,6 +176,7 @@ fn test_lifecycle_config() {
     assert_eq!(lifecycle.post_stop.as_deref(), Some("echo stop"));
 }
 
+#[cfg(feature = "lifecycle-hooks")]
 #[test]
 fn test_lifecycle_config_does_not_set_process_env() {
     let key = "LEAF_JSON_LIFECYCLE_ENV_TEST_KEY";

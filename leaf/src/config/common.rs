@@ -546,6 +546,7 @@ pub struct Router {
 pub struct Config {
     pub log: Option<Log>,
     pub env: Option<HashMap<String, String>>,
+    #[cfg(feature = "lifecycle-hooks")]
     pub lifecycle: Option<crate::LifecycleCommands>,
     pub inbounds: Option<Vec<Inbound>>,
     pub outbounds: Option<Vec<Outbound>>,
