@@ -94,6 +94,7 @@ all-endpoints = [
     "inbound-socks",
     "inbound-tun",
     "inbound-cat",
+    "inbound-tproxy",
     # outbounds
     "outbound-direct",
     "outbound-drop",
@@ -183,6 +184,7 @@ inbound-tls = []
 inbound-chain = []
 inbound-cat = ["tokio/io-std"]
 inbound-nf = ["libloading"]
+inbound-tproxy = []
 
 plugin = ["async-ffi", "libloading"]
 api = ["axum"]
