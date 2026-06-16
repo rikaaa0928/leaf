@@ -25,6 +25,7 @@ use app::{
 };
 
 use crate::app::{stat_manager::StatManager, SyncStatManager};
+use proxy_observe::ObserveRegistry;
 
 #[cfg(feature = "api")]
 use crate::app::api::api_server::ApiServer;
@@ -120,6 +121,7 @@ pub struct RuntimeManager {
     dns_client: Arc<RwLock<DnsClient>>,
     outbound_manager: Arc<RwLock<OutboundManager>>,
     stat_manager: SyncStatManager,
+    observe_registry: ObserveRegistry,
     #[cfg(feature = "routing-history")]
     routing_history: SyncRoutingHistory,
     #[cfg(feature = "auto-reload")]
@@ -138,6 +140,7 @@ impl RuntimeManager {
         dns_client: Arc<RwLock<DnsClient>>,
         outbound_manager: Arc<RwLock<OutboundManager>>,
         stat_manager: SyncStatManager,
+        observe_registry: ObserveRegistry,
         #[cfg(feature = "routing-history")] routing_history: SyncRoutingHistory,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -152,6 +155,7 @@ impl RuntimeManager {
             dns_client,
             outbound_manager,
             stat_manager,
+            observe_registry,
             #[cfg(feature = "routing-history")]
             routing_history,
             #[cfg(feature = "auto-reload")]
@@ -161,6 +165,10 @@ impl RuntimeManager {
 
     pub fn stat_manager(&self) -> SyncStatManager {
         self.stat_manager.clone()
+    }
+
+    pub fn observe_registry(&self) -> ObserveRegistry {
+        self.observe_registry.clone()
     }
 
     #[cfg(feature = "routing-history")]
@@ -539,10 +547,14 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         &mut config.router,
         dns_client.clone(),
     )));
-    let stat_manager = Arc::new(RwLock::new(StatManager::new()));
+    let observe_registry = ObserveRegistry::new();
+    let stat_manager = Arc::new(RwLock::new(StatManager::new(Some(
+        observe_registry.clone(),
+    ))));
     #[cfg(feature = "routing-history")]
     let routing_history = Arc::new(app::routing_history::RoutingHistory::new());
     runners.push(StatManager::cleanup_task(stat_manager.clone()));
+    runners.push(observe_registry.sampler_task());
     let dispatcher = Arc::new(Dispatcher::new(
         outbound_manager.clone(),
         router.clone(),
@@ -622,6 +634,7 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         dns_client,
         outbound_manager,
         stat_manager,
+        observe_registry.clone(),
         #[cfg(feature = "routing-history")]
         routing_history,
     );
@@ -649,6 +662,12 @@ pub fn start(rt_id: RuntimeId, opts: StartOptions) -> Result<(), Error> {
         if let Some(listen_addr) = listen_addr {
             let api_server = ApiServer::new(runtime_manager.clone());
             runners.push(api_server.serve(listen_addr));
+        }
+        if let Some(listen_addr) = proxy_observe::env_listen_addr() {
+            runners.push(proxy_observe::api::serve(
+                observe_registry.clone(),
+                listen_addr,
+            ));
         }
     }
 

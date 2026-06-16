@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::debug;
 
 use crate::{option, proxy::*, session::*};
+use proxy_observe::{ConnectionMeta, ObserveConnection, ObserveRegistry};
 
 pub type SyncStatManager = Arc<RwLock<StatManager>>;
 
@@ -25,6 +26,8 @@ pub struct Stream {
     pub last_peer_active: Arc<AtomicU32>,
     pub id: u64,
     pub tx: mpsc::UnboundedSender<u64>,
+    pub observe: Option<ObserveConnection>,
+    pub reverse_observe: bool,
 }
 
 impl Drop for Stream {
@@ -32,6 +35,9 @@ impl Drop for Stream {
         // In case of abnormal shutdown.
         self.recv_completed.store(true, Ordering::Relaxed);
         self.send_completed.store(true, Ordering::Relaxed);
+        if let Some(observe) = &self.observe {
+            observe.finish();
+        }
         let _ = self.tx.send(self.id);
     }
 }
@@ -47,8 +53,15 @@ impl AsyncRead for Stream {
         ready!(Pin::new(&mut self.inner).poll_read(cx, buf))?;
         let new_len = buf.filled().len();
         if new_len > len {
-            self.bytes_recvd
-                .fetch_add((new_len - len) as u64, Ordering::Relaxed);
+            let n = (new_len - len) as u64;
+            self.bytes_recvd.fetch_add(n, Ordering::Relaxed);
+            if let Some(observe) = &self.observe {
+                if self.reverse_observe {
+                    observe.add_tx(n);
+                } else {
+                    observe.add_rx(n);
+                }
+            }
             self.last_peer_active
                 .store(get_unix_timestamp(), Ordering::Relaxed);
         } else if remaining > 0 {
@@ -66,6 +79,13 @@ impl AsyncWrite for Stream {
     ) -> Poll<io::Result<usize>> {
         let n = ready!(Pin::new(&mut self.inner).poll_write(cx, buf))?;
         self.bytes_sent.fetch_add(n as u64, Ordering::Relaxed);
+        if let Some(observe) = &self.observe {
+            if self.reverse_observe {
+                observe.add_rx(n as u64);
+            } else {
+                observe.add_tx(n as u64);
+            }
+        }
         Poll::Ready(Ok(n))
     }
 
@@ -89,10 +109,14 @@ pub struct Datagram {
     pub last_peer_active: Arc<AtomicU32>,
     pub id: u64,
     pub tx: mpsc::UnboundedSender<u64>,
+    pub observe: Option<ObserveConnection>,
 }
 
 impl Drop for Datagram {
     fn drop(&mut self) {
+        if let Some(observe) = &self.observe {
+            observe.finish();
+        }
         let _ = self.tx.send(self.id);
     }
 }
@@ -105,17 +129,20 @@ impl OutboundDatagram for Datagram {
         Box<dyn OutboundDatagramSendHalf>,
     ) {
         let (r, s) = self.inner.take().expect("inner should be present").split();
+        let observe = self.observe.take();
         (
             Box::new(DatagramRecvHalf(
                 r,
                 self.bytes_recvd.clone(),
                 self.recv_completed.clone(),
                 self.last_peer_active.clone(),
+                observe.clone(),
             )),
             Box::new(DatagramSendHalf(
                 s,
                 self.bytes_sent.clone(),
                 self.send_completed.clone(),
+                observe,
             )),
         )
     }
@@ -126,6 +153,7 @@ pub struct DatagramRecvHalf(
     Arc<AtomicU64>,
     Arc<AtomicBool>,
     Arc<AtomicU32>,
+    Option<ObserveConnection>,
 );
 
 impl Drop for DatagramRecvHalf {
@@ -139,6 +167,9 @@ impl OutboundDatagramRecvHalf for DatagramRecvHalf {
     async fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<(usize, SocksAddr)> {
         self.0.recv_from(buf).await.map(|(n, a)| {
             self.1.fetch_add(n as u64, Ordering::Relaxed);
+            if let Some(observe) = &self.4 {
+                observe.add_rx(n as u64);
+            }
             self.3.store(get_unix_timestamp(), Ordering::Relaxed);
             (n, a)
         })
@@ -149,6 +180,7 @@ pub struct DatagramSendHalf(
     Box<dyn OutboundDatagramSendHalf>,
     Arc<AtomicU64>,
     Arc<AtomicBool>,
+    Option<ObserveConnection>,
 );
 
 impl Drop for DatagramSendHalf {
@@ -162,6 +194,9 @@ impl OutboundDatagramSendHalf for DatagramSendHalf {
     async fn send_to(&mut self, buf: &[u8], target: &SocksAddr) -> io::Result<usize> {
         self.0.send_to(buf, target).await.inspect(|&n| {
             self.1.fetch_add(n as u64, Ordering::Relaxed);
+            if let Some(observe) = &self.3 {
+                observe.add_tx(n as u64);
+            }
         })
     }
 
@@ -241,10 +276,11 @@ pub struct StatManager {
     pub next_id: u64,
     pub tx: mpsc::UnboundedSender<u64>,
     pub rx: Option<mpsc::UnboundedReceiver<u64>>,
+    observer: Option<ObserveRegistry>,
 }
 
-impl Default for StatManager {
-    fn default() -> Self {
+impl StatManager {
+    pub fn new(observer: Option<ObserveRegistry>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
             counters: HashMap::new(),
@@ -253,15 +289,12 @@ impl Default for StatManager {
             next_id: 1,
             tx,
             rx: Some(rx),
+            observer,
         }
     }
 }
 
 impl StatManager {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn move_to_recent(&mut self) {
         let mut to_move = Vec::new();
         for (id, c) in self.counters.iter() {
@@ -340,6 +373,7 @@ impl StatManager {
     }
 
     pub fn stat_stream(&mut self, stream: AnyStream, sess: Session) -> AnyStream {
+        let observe = self.observe_connection(&sess);
         let bytes_recvd = Arc::new(AtomicU64::new(0));
         let bytes_sent = Arc::new(AtomicU64::new(0));
         let recv_completed = Arc::new(AtomicBool::new(false));
@@ -372,10 +406,13 @@ impl StatManager {
             last_peer_active,
             id,
             tx: self.tx.clone(),
+            observe,
+            reverse_observe: false,
         })
     }
 
     pub fn stat_inbound_stream(&mut self, stream: AnyStream, sess: Session) -> AnyStream {
+        let observe = self.observe_connection(&sess);
         let bytes_recvd = Arc::new(AtomicU64::new(0));
         let bytes_sent = Arc::new(AtomicU64::new(0));
         let recv_completed = Arc::new(AtomicBool::new(false));
@@ -408,6 +445,8 @@ impl StatManager {
             last_peer_active,
             id,
             tx: self.tx.clone(),
+            observe,
+            reverse_observe: true,
         })
     }
 
@@ -416,6 +455,7 @@ impl StatManager {
         dgram: AnyOutboundDatagram,
         sess: Session,
     ) -> AnyOutboundDatagram {
+        let observe = self.observe_connection(&sess);
         let bytes_recvd = Arc::new(AtomicU64::new(0));
         let bytes_sent = Arc::new(AtomicU64::new(0));
         let recv_completed = Arc::new(AtomicBool::new(false));
@@ -448,6 +488,24 @@ impl StatManager {
             last_peer_active,
             id,
             tx: self.tx.clone(),
+            observe,
+        })
+    }
+
+    fn observe_connection(&self, sess: &Session) -> Option<ObserveConnection> {
+        self.observer.as_ref().map(|observer| {
+            observer.open(ConnectionMeta {
+                service: "leaf".to_string(),
+                network: sess.network.to_string(),
+                listener: sess.inbound_tag.clone(),
+                router: None,
+                route: Some(sess.outbound_tag.clone()),
+                inbound: Some(sess.inbound_tag.clone()),
+                outbound: Some(sess.outbound_tag.clone()),
+                source: sess.source.to_string(),
+                destination: sess.destination.to_string(),
+                site: None,
+            })
         })
     }
 
@@ -532,6 +590,8 @@ mod tests {
             last_peer_active: last_peer_active.clone(),
             id: 0,
             tx,
+            observe: None,
+            reverse_observe: false,
         };
 
         let mut data = vec![0u8; 20];

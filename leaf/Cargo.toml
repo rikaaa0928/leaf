@@ -191,6 +191,7 @@ routing-history = []
 [dependencies]
 # Common
 tokio = { version = "1", features = ["sync", "io-util", "net", "time", "rt", "rt-multi-thread"] }
+proxy-observe = { git = "https://github.com/rikaaa0928/proxy-observe.git" }
 protobuf = "3.6"
 thiserror = "1.0"
 futures = "0.3"

@@ -362,6 +362,42 @@ table, th, td {
             udp_ms,
         }))
     }
+
+    pub async fn observe_overview(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Json<proxy_observe::OverviewSnapshot>, Infallible> {
+        Ok(Json(rm.observe_registry().overview()))
+    }
+
+    pub async fn observe_bandwidth(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Json<proxy_observe::BandwidthSnapshot>, Infallible> {
+        Ok(Json(rm.observe_registry().bandwidth()))
+    }
+
+    pub async fn observe_traffic(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Json<proxy_observe::TrafficSnapshot>, Infallible> {
+        Ok(Json(rm.observe_registry().traffic()))
+    }
+
+    pub async fn observe_sites(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Json<Vec<proxy_observe::SiteSnapshot>>, Infallible> {
+        Ok(Json(rm.observe_registry().sites()))
+    }
+
+    pub async fn observe_routes(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Json<Vec<proxy_observe::RouteSnapshot>>, Infallible> {
+        Ok(Json(rm.observe_registry().routes()))
+    }
+
+    pub async fn observe_connections(
+        State(rm): State<Arc<RuntimeManager>>,
+    ) -> Result<Json<Vec<proxy_observe::ConnectionSnapshot>>, Infallible> {
+        Ok(Json(rm.observe_registry().connections()))
+    }
 }
 
 pub struct ApiServer {
@@ -408,6 +444,18 @@ impl ApiServer {
             .route(
                 "/api/v1/runtime/outbound/{tag}/health",
                 get(handlers::outbound_health),
+            )
+            .route("/api/v1/observe/overview", get(handlers::observe_overview))
+            .route(
+                "/api/v1/observe/bandwidth",
+                get(handlers::observe_bandwidth),
+            )
+            .route("/api/v1/observe/traffic", get(handlers::observe_traffic))
+            .route("/api/v1/observe/sites", get(handlers::observe_sites))
+            .route("/api/v1/observe/routes", get(handlers::observe_routes))
+            .route(
+                "/api/v1/observe/connections",
+                get(handlers::observe_connections),
             );
 
         let app = app.with_state(self.runtime_manager.clone());
