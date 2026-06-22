@@ -48,6 +48,7 @@ rog-default-ring = [
     "ring-aead",
     "rustls-tls",
     "rustls-tls-ring",
+    "api",
 ]
 
 rog-default-aws-lc = [
@@ -56,6 +57,7 @@ rog-default-aws-lc = [
     "aws-lc-aead",
     "rustls-tls",
     "rustls-tls-aws-lc",
+    "api",
 ]
 
 rog-default-openssl = [
@@ -63,6 +65,7 @@ rog-default-openssl = [
     "rog-endpoints",
     "openssl-aead",
     "openssl-tls",
+    "api",
 ]
 
 rustls-tls-aws-lc = ["tokio-rustls/aws_lc_rs", "rustls/aws_lc_rs"]
