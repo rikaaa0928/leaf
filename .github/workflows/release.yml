@@ -112,7 +112,6 @@ jobs:
 
   build-lib-apple:
     runs-on: macos-latest
-    continue-on-error: true
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -246,7 +245,7 @@ jobs:
           path: leaf-android-uniffi-libs.zip
 
   create-release:
-    needs: [build-cli-cross, build-cli-macos, build-lib-android, build-lib-android-uniffi]
+    needs: [build-cli-cross, build-cli-macos, build-lib-apple, build-lib-android, build-lib-android-uniffi]
     runs-on: macos-latest
     steps:
       - name: checkout
@@ -358,12 +357,27 @@ jobs:
       - name: download asset
         uses: actions/download-artifact@v4
         with:
+          name: leaf.xcframework.zip
+
+      - name: download asset
+        uses: actions/download-artifact@v4
+        with:
           name: leaf-android-libs.zip
 
       - name: download asset
         uses: actions/download-artifact@v4
         with:
           name: leaf-android-uniffi-libs.zip
+
+      - name: upload asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.uploadurl }}
+          asset_path: ./leaf.xcframework.zip
+          asset_name: leaf.xcframework.zip
+          asset_content_type: application/octet-stream
 
       - name: upload asset
         uses: actions/upload-release-asset@v1

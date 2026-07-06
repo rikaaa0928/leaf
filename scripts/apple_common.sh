@@ -19,9 +19,6 @@ setup_env() {
         release_flag=
     fi
 
-    export IPHONEOS_DEPLOYMENT_TARGET=10.0
-    export MACOSX_DEPLOYMENT_TARGET=10.12
-    
     # Output directories
     BASE_DIR="target/apple/$mode"
     INCLUDE_DIR="$BASE_DIR/include"
@@ -34,6 +31,9 @@ clean_dir() {
 }
 
 build_macos_libs() {
+    unset IPHONEOS_DEPLOYMENT_TARGET
+    export MACOSX_DEPLOYMENT_TARGET=10.12
+
     rustup target add x86_64-apple-darwin
     rustup target add aarch64-apple-darwin
 
@@ -49,6 +49,9 @@ build_macos_libs() {
 }
 
 build_ios_libs() {
+    unset MACOSX_DEPLOYMENT_TARGET
+    export IPHONEOS_DEPLOYMENT_TARGET=10.0
+
     rustup target add aarch64-apple-ios
     rustup target add x86_64-apple-ios
     rustup target add aarch64-apple-ios-sim
