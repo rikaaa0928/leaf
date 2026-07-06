@@ -223,6 +223,9 @@ message RogOutboundSettings {
     string password = 3;
     bool custom_connector = 4;
     bool keep_alive = 5;
+    uint32 keep_alive_interval_secs = 6;
+    uint32 keep_alive_timeout_secs = 7;
+    optional bool keep_alive_while_idle = 8;
 }
 
 message ChainOutboundSettings {

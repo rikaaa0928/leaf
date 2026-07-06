@@ -3961,6 +3961,12 @@ pub struct RogOutboundSettings {
     pub custom_connector: bool,
     // @@protoc_insertion_point(field:RogOutboundSettings.keep_alive)
     pub keep_alive: bool,
+    // @@protoc_insertion_point(field:RogOutboundSettings.keep_alive_interval_secs)
+    pub keep_alive_interval_secs: u32,
+    // @@protoc_insertion_point(field:RogOutboundSettings.keep_alive_timeout_secs)
+    pub keep_alive_timeout_secs: u32,
+    // @@protoc_insertion_point(field:RogOutboundSettings.keep_alive_while_idle)
+    pub keep_alive_while_idle: ::std::option::Option<bool>,
     // special fields
     // @@protoc_insertion_point(special_field:RogOutboundSettings.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -4003,6 +4009,15 @@ impl ::protobuf::Message for RogOutboundSettings {
                 40 => {
                     self.keep_alive = is.read_bool()?;
                 },
+                48 => {
+                    self.keep_alive_interval_secs = is.read_uint32()?;
+                },
+                56 => {
+                    self.keep_alive_timeout_secs = is.read_uint32()?;
+                },
+                64 => {
+                    self.keep_alive_while_idle = ::std::option::Option::Some(is.read_bool()?);
+                },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
                 },
@@ -4030,6 +4045,15 @@ impl ::protobuf::Message for RogOutboundSettings {
         if self.keep_alive != false {
             my_size += 1 + 1;
         }
+        if self.keep_alive_interval_secs != 0 {
+            my_size += ::protobuf::rt::uint32_size(6, self.keep_alive_interval_secs);
+        }
+        if self.keep_alive_timeout_secs != 0 {
+            my_size += ::protobuf::rt::uint32_size(7, self.keep_alive_timeout_secs);
+        }
+        if let Some(v) = self.keep_alive_while_idle {
+            my_size += 1 + 1;
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -4050,6 +4074,15 @@ impl ::protobuf::Message for RogOutboundSettings {
         }
         if self.keep_alive != false {
             os.write_bool(5, self.keep_alive)?;
+        }
+        if self.keep_alive_interval_secs != 0 {
+            os.write_uint32(6, self.keep_alive_interval_secs)?;
+        }
+        if self.keep_alive_timeout_secs != 0 {
+            os.write_uint32(7, self.keep_alive_timeout_secs)?;
+        }
+        if let Some(v) = self.keep_alive_while_idle {
+            os.write_bool(8, v)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -4073,6 +4106,9 @@ impl ::protobuf::Message for RogOutboundSettings {
         self.password.clear();
         self.custom_connector = false;
         self.keep_alive = false;
+        self.keep_alive_interval_secs = 0;
+        self.keep_alive_timeout_secs = 0;
+        self.keep_alive_while_idle = ::std::option::Option::None;
         self.special_fields.clear();
     }
 
@@ -4083,6 +4119,9 @@ impl ::protobuf::Message for RogOutboundSettings {
             password: ::std::string::String::new(),
             custom_connector: false,
             keep_alive: false,
+            keep_alive_interval_secs: 0,
+            keep_alive_timeout_secs: 0,
+            keep_alive_while_idle: ::std::option::Option::None,
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance

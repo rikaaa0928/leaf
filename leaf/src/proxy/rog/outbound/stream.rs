@@ -6,7 +6,7 @@ use crate::proxy::rog::protocol::rog::rog_service_client::RogServiceClient;
 #[cfg(feature = "outbound-rog")]
 use crate::proxy::rog::stream::RogStream;
 #[cfg(feature = "outbound-rog")]
-use crate::proxy::rog::util::init_client;
+use crate::proxy::rog::util::{init_client, ClientOptions};
 #[cfg(feature = "outbound-rog")]
 use crate::{proxy::*, session::*};
 #[cfg(feature = "outbound-rog")]
@@ -21,7 +21,7 @@ pub struct Handler {
     pub port: u16,
     pub password: String,
     pub custom_connector: bool,
-    pub keep_alive: bool,
+    pub client_options: ClientOptions,
     pub dns_client: SyncDnsClient,
     pub rog_client: Arc<tokio::sync::OnceCell<RogServiceClient<Channel>>>,
 }
@@ -48,7 +48,16 @@ impl OutboundStreamHandler for Handler {
 
         let client = self
             .rog_client
-            .get_or_try_init(|| async { init_client(endpoint, dns_client, port, self.custom_connector, self.keep_alive).await })
+            .get_or_try_init(|| async {
+                init_client(
+                    endpoint,
+                    dns_client,
+                    port,
+                    self.custom_connector,
+                    self.client_options,
+                )
+                .await
+            })
             .await
             .map_err(io::Error::other)?
             .clone();

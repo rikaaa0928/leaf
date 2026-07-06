@@ -336,6 +336,12 @@ pub struct RogOutboundSettings {
     pub custom_connector: Option<bool>,
     #[serde(rename = "keepAlive", alias = "keep_alive")]
     pub keep_alive: Option<bool>,
+    #[serde(rename = "keepAliveIntervalSecs", alias = "keep_alive_interval_secs")]
+    pub keep_alive_interval_secs: Option<u32>,
+    #[serde(rename = "keepAliveTimeoutSecs", alias = "keep_alive_timeout_secs")]
+    pub keep_alive_timeout_secs: Option<u32>,
+    #[serde(rename = "keepAliveWhileIdle", alias = "keep_alive_while_idle")]
+    pub keep_alive_while_idle: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1036,6 +1042,18 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                         }
                         if let Some(keep_alive) = ext_settings.keep_alive {
                             settings.keep_alive = keep_alive;
+                        }
+                        if let Some(keep_alive_interval_secs) =
+                            ext_settings.keep_alive_interval_secs
+                        {
+                            settings.keep_alive_interval_secs = keep_alive_interval_secs;
+                        }
+                        if let Some(keep_alive_timeout_secs) = ext_settings.keep_alive_timeout_secs
+                        {
+                            settings.keep_alive_timeout_secs = keep_alive_timeout_secs;
+                        }
+                        if let Some(keep_alive_while_idle) = ext_settings.keep_alive_while_idle {
+                            settings.keep_alive_while_idle = Some(keep_alive_while_idle);
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         outbound.settings = settings;

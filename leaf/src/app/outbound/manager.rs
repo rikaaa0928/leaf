@@ -274,13 +274,19 @@ impl OutboundManager {
                     let settings =
                         config::RogOutboundSettings::parse_from_bytes(&outbound.settings)
                             .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                    let client_options = rog::util::ClientOptions::new(
+                        settings.keep_alive,
+                        settings.keep_alive_interval_secs,
+                        settings.keep_alive_timeout_secs,
+                        settings.keep_alive_while_idle,
+                    );
                     let stream = Arc::new(rog::outbound::StreamHandler {
                         address: settings.address.clone(),
                         port: settings.port as u16,
                         password: settings.password.clone(),
                         dns_client: dns_client.clone(),
                         custom_connector: settings.custom_connector,
-                        keep_alive: settings.keep_alive,
+                        client_options,
                         rog_client: Arc::new(tokio::sync::OnceCell::new()),
                     });
                     let datagram = Arc::new(rog::outbound::DatagramHandler {
@@ -289,7 +295,7 @@ impl OutboundManager {
                         password: settings.password,
                         dns_client: dns_client.clone(),
                         custom_connector: settings.custom_connector,
-                        keep_alive: settings.keep_alive,
+                        client_options,
                         rog_client: Arc::new(tokio::sync::OnceCell::new()),
                     });
                     HandlerBuilder::default()

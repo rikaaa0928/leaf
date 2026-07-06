@@ -71,6 +71,9 @@ pub struct Proxy {
     pub password: Option<String>,
     pub custom_connector: Option<bool>,
     pub keep_alive: Option<bool>,
+    pub keep_alive_interval_secs: Option<u32>,
+    pub keep_alive_timeout_secs: Option<u32>,
+    pub keep_alive_while_idle: Option<bool>,
 
     // simple-obfs
     pub obfs_type: Option<String>,
@@ -121,6 +124,9 @@ impl Default for Proxy {
             password: None,
             custom_connector: None,
             keep_alive: None,
+            keep_alive_interval_secs: None,
+            keep_alive_timeout_secs: None,
+            keep_alive_while_idle: None,
             obfs_type: None,
             obfs_host: None,
             obfs_path: None,
@@ -641,6 +647,15 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
                 }
                 "keep-alive" | "keep_alive" => {
                     proxy.keep_alive = if v == "true" { Some(true) } else { Some(false) }
+                }
+                "keep-alive-interval-secs" | "keep_alive_interval_secs" => {
+                    proxy.keep_alive_interval_secs = Some(v.parse()?)
+                }
+                "keep-alive-timeout-secs" | "keep_alive_timeout_secs" => {
+                    proxy.keep_alive_timeout_secs = Some(v.parse()?)
+                }
+                "keep-alive-while-idle" | "keep_alive_while_idle" => {
+                    proxy.keep_alive_while_idle = if v == "true" { Some(true) } else { Some(false) }
                 }
                 "obfs" => {
                     proxy.obfs_type = Some(v.to_string());
@@ -1463,6 +1478,9 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                                 password: ext_proxy.password.clone(),
                                 custom_connector: ext_proxy.custom_connector,
                                 keep_alive: ext_proxy.keep_alive,
+                                keep_alive_interval_secs: ext_proxy.keep_alive_interval_secs,
+                                keep_alive_timeout_secs: ext_proxy.keep_alive_timeout_secs,
+                                keep_alive_while_idle: ext_proxy.keep_alive_while_idle,
                             }),
                         },
                     });
@@ -1706,7 +1724,7 @@ Vmess = vmess, 1.2.3.4, 443, username, amux=true, sni=www.google.com
     fn test_rog_custom_connector_mapping() {
         let conf = r#"
 [Proxy]
-ROG = rog, jp.bilibili.network, 443, password=123456, custom-connector=true
+ROG = rog, jp.bilibili.network, 443, password=123456, custom-connector=true, keep-alive=true, keep-alive-interval-secs=45, keep-alive-timeout-secs=15, keep-alive-while-idle=false
 "#;
         let lines: Vec<io::Result<String>> = conf.lines().map(|s| Ok(s.to_string())).collect();
         let config = from_lines(lines).unwrap();
@@ -1723,6 +1741,10 @@ ROG = rog, jp.bilibili.network, 443, password=123456, custom-connector=true
             assert_eq!(settings.port, Some(443));
             assert_eq!(settings.password, Some("123456".to_string()));
             assert_eq!(settings.custom_connector, Some(true));
+            assert_eq!(settings.keep_alive, Some(true));
+            assert_eq!(settings.keep_alive_interval_secs, Some(45));
+            assert_eq!(settings.keep_alive_timeout_secs, Some(15));
+            assert_eq!(settings.keep_alive_while_idle, Some(false));
         } else {
             panic!("Not rog outbound: {:?}", rog.settings);
         }
@@ -1732,6 +1754,10 @@ ROG = rog, jp.bilibili.network, 443, password=123456, custom-connector=true
         let settings =
             crate::config::internal::RogOutboundSettings::parse_from_bytes(&rog.settings).unwrap();
         assert!(settings.custom_connector);
+        assert!(settings.keep_alive);
+        assert_eq!(settings.keep_alive_interval_secs, 45);
+        assert_eq!(settings.keep_alive_timeout_secs, 15);
+        assert_eq!(settings.keep_alive_while_idle, Some(false));
     }
 
     #[test]
