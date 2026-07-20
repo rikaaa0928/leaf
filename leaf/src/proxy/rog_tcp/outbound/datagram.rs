@@ -42,9 +42,6 @@ impl OutboundDatagramHandler for Handler {
 
         write_conn_type(&mut stream, CONN_TYPE_UDP).await?;
 
-        Ok(Box::new(RogTcpDatagram::new(
-            stream,
-            self.password.clone(),
-        )))
+        Ok(Box::new(RogTcpDatagram::new(stream, self.password.clone())))
     }
 }

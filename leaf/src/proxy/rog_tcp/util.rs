@@ -2,15 +2,15 @@
 use std::io;
 
 #[cfg(feature = "outbound-rog-tcp")]
+use base64::engine::general_purpose::STANDARD as BASE64;
+#[cfg(feature = "outbound-rog-tcp")]
+use base64::Engine;
+#[cfg(feature = "outbound-rog-tcp")]
 use chacha20poly1305::aead::rand_core::RngCore;
 #[cfg(feature = "outbound-rog-tcp")]
 use chacha20poly1305::aead::{Aead, OsRng};
 #[cfg(feature = "outbound-rog-tcp")]
 use chacha20poly1305::{AeadCore, ChaCha20Poly1305, KeyInit};
-#[cfg(feature = "outbound-rog-tcp")]
-use base64::engine::general_purpose::STANDARD as BASE64;
-#[cfg(feature = "outbound-rog-tcp")]
-use base64::Engine;
 #[cfg(feature = "outbound-rog-tcp")]
 use prost::Message;
 #[cfg(feature = "outbound-rog-tcp")]
