@@ -13,6 +13,7 @@ crate-type = ["staticlib", "dylib"]
 default = [
     "default-aws-lc",
     "auto-reload",
+    "routing-history",
 ]
 
 default-aws-lc= [
