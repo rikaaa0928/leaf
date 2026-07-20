@@ -95,11 +95,15 @@ impl Manager {
             quinn::crypto::rustls::QuicClientConfig::try_from(client_crypto).unwrap(),
         ));
         let mut transport_config = quinn::TransportConfig::default();
-        transport_config.max_concurrent_bidi_streams(quinn::VarInt::from_u32(64));
+        transport_config.max_concurrent_bidi_streams(quinn::VarInt::from_u32(
+            *crate::option::QUIC_MAX_CONCURRENT_BIDI_STREAMS,
+        ));
         transport_config.max_idle_timeout(Some(quinn::IdleTimeout::from(quinn::VarInt::from_u32(
-            300_000,
+            *crate::option::QUIC_MAX_IDLE_TIMEOUT_MS,
         ))));
-        transport_config.keep_alive_interval(Some(Duration::from_secs(10)));
+        transport_config.keep_alive_interval(Some(Duration::from_millis(
+            *crate::option::QUIC_KEEP_ALIVE_INTERVAL_MS,
+        )));
         transport_config
             .congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default()));
         client_config.transport_config(Arc::new(transport_config));
@@ -121,28 +125,37 @@ impl Manager {
     ) -> Result<QuicProxyStream<quinn::RecvStream, quinn::SendStream>> {
         let dial_timeout = Duration::from_secs(*crate::option::OUTBOUND_DIAL_TIMEOUT);
         let start = std::time::Instant::now();
-        {
-            let mut conns = self.connections.write().await;
-            let idx = 0usize;
-            while idx < conns.len() {
-                let conn = &conns[idx];
-                match timeout(dial_timeout, conn.open_bi()).await {
-                    Ok(Ok((send, recv))) => {
-                        trace!(
-                            "opened stream on existing connection (rtt {} ms) in {} ms",
-                            conn.rtt().as_millis(),
-                            start.elapsed().as_millis(),
-                        );
-                        return Ok(QuicProxyStream { recv, send });
-                    }
-                    Ok(Err(e)) => {
-                        debug!("open stream failed: {}", e);
-                        conns.swap_remove(idx);
-                    }
-                    Err(_) => {
-                        debug!("open stream timed out");
-                        conns.swap_remove(idx);
-                    }
+        loop {
+            let conn = {
+                let mut conns = self.connections.write().await;
+                if conns.is_empty() {
+                    None
+                } else {
+                    Some(conns.swap_remove(0))
+                }
+            };
+
+            let Some(conn) = conn else {
+                break;
+            };
+
+            match timeout(dial_timeout, conn.open_bi()).await {
+                Ok(Ok((send, recv))) => {
+                    let rtt = conn.rtt();
+                    let mut conns = self.connections.write().await;
+                    conns.insert(0, conn);
+                    trace!(
+                        "opened stream on existing connection (rtt {} ms) in {} ms",
+                        rtt.as_millis(),
+                        start.elapsed().as_millis(),
+                    );
+                    return Ok(QuicProxyStream { recv, send });
+                }
+                Ok(Err(e)) => {
+                    debug!("open stream failed: {}", e);
+                }
+                Err(_) => {
+                    debug!("open stream timed out");
                 }
             }
         }
@@ -206,8 +219,10 @@ impl Manager {
             };
 
             let mut conns = self.connections.write().await;
+            if conns.len() >= 4 {
+                conns.swap_remove(0);
+            }
             conns.push(conn);
-            conns.truncate(4);
 
             trace!("opened quic stream on new connection",);
 
