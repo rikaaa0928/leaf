@@ -433,6 +433,10 @@ pub fn is_running(key: RuntimeId) -> bool {
     RUNTIME_MANAGER.lock().unwrap().contains_key(&key)
 }
 
+pub fn runtime_manager(key: RuntimeId) -> Option<Arc<RuntimeManager>> {
+    RUNTIME_MANAGER.lock().ok()?.get(&key).cloned()
+}
+
 pub fn test_config(config_path: &str) -> Result<(), Error> {
     config::from_file(config_path)
         .map(|_| ())
