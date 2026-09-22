@@ -35,6 +35,62 @@ pub fn load_site_rule(filter: &str) -> Result<(String, String)> {
     load_file_or_default(filter, "site.dat")
 }
 
+pub fn parse_remote_spec(raw: &str) -> Option<(&'static str, String, u64)> {
+    let (rule_type, rest) = if let Some(r) = raw
+        .strip_prefix("suffix:")
+        .or_else(|| raw.strip_prefix("domain-suffix:"))
+        .or_else(|| raw.strip_prefix("domain_suffix:"))
+    {
+        ("suffix", r)
+    } else if let Some(r) = raw
+        .strip_prefix("keyword:")
+        .or_else(|| raw.strip_prefix("domain-keyword:"))
+        .or_else(|| raw.strip_prefix("domain_keyword:"))
+    {
+        ("keyword", r)
+    } else if raw.starts_with("http://") || raw.starts_with("https://") {
+        if raw.to_lowercase().contains("keyword") {
+            ("keyword", raw)
+        } else {
+            ("suffix", raw)
+        }
+    } else {
+        return None;
+    };
+
+    let rest = rest.trim();
+    let mut interval = 3600u64;
+    let url;
+    if let Some((u, int_str)) = rest.rsplit_once('#') {
+        if let Some(val) = int_str.strip_prefix("interval=") {
+            if let Ok(v) = val.parse::<u64>() {
+                interval = v;
+            }
+        }
+        url = u.to_string();
+    } else if let Some((u, int_str)) = rest.rsplit_once(':') {
+        if let Ok(v) = int_str.parse::<u64>() {
+            // Check that the colon is after the path slash (not the port in host:port/)
+            if !u.contains('/')
+                || u.find('/')
+                    .map(|i| i < u.rfind(':').unwrap_or(0))
+                    .unwrap_or(false)
+            {
+                interval = v;
+                url = u.to_string();
+            } else {
+                url = rest.to_string();
+            }
+        } else {
+            url = rest.to_string();
+        }
+    } else {
+        url = rest.to_string();
+    }
+
+    Some((rule_type, url, interval))
+}
+
 pub fn add_external_rule(rule: &mut internal::router::Rule, ext_external: &str) -> Result<()> {
     if ext_external.starts_with("mmdb") {
         let (file, code) = match load_mmdb_rule(ext_external) {
@@ -46,7 +102,8 @@ pub fn add_external_rule(rule: &mut internal::router::Rule, ext_external: &str) 
         let mut mmdb = internal::router::rule::Mmdb::new();
         mmdb.file = file;
         mmdb.country_code = code;
-        rule.mmdbs.push(mmdb)
+        rule.mmdbs.push(mmdb);
+        return Ok(());
     }
 
     if ext_external.starts_with("site") {
@@ -104,6 +161,16 @@ pub fn add_external_rule(rule: &mut internal::router::Rule, ext_external: &str) 
                 break; // assume at most 1 matched tag
             }
         }
+        return Ok(());
     }
-    Ok(())
+
+    if let Some((rule_type, url, interval)) = parse_remote_spec(ext_external) {
+        let mut d = internal::router::rule::Domain::new();
+        d.type_ = protobuf::EnumOrUnknown::new(internal::router::rule::domain::Type::PLAIN);
+        d.value = format!("__remote_rule__:{}:{}:{}", rule_type, url, interval);
+        rule.domains.push(d);
+        return Ok(());
+    }
+
+    Err(anyhow!("invalid external rule: {}", ext_external))
 }

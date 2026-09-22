@@ -976,15 +976,40 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
             continue; // at lease 3 params except the FINAL rule
         }
 
-        // the 3th must be the target
-        rule.target = params[2].to_string();
-
-        match rule.type_field.as_str() {
-            "IP-CIDR" | "DOMAIN" | "DOMAIN-SUFFIX" | "DOMAIN-KEYWORD" | "GEOIP" | "EXTERNAL"
-            | "PORT-RANGE" | "NETWORK" | "INBOUND-TAG" | "PROCESS-NAME" => {
-                rule.filter = Some(params[1].to_string());
+        if rule.type_field == "EXTERNAL-SUFFIX" || rule.type_field == "EXTERNAL-KEYWORD" {
+            let mut filter = params[1].clone();
+            if params.len() >= 4 {
+                if let Ok(iv) = params[2]
+                    .trim()
+                    .trim_start_matches("interval=")
+                    .parse::<u64>()
+                {
+                    rule.target = params[3].to_string();
+                    filter = format!("{}:{}", filter, iv);
+                } else if let Ok(iv) = params[3]
+                    .trim()
+                    .trim_start_matches("interval=")
+                    .parse::<u64>()
+                {
+                    rule.target = params[2].to_string();
+                    filter = format!("{}:{}", filter, iv);
+                } else {
+                    rule.target = params[2].to_string();
+                }
+            } else {
+                rule.target = params[2].to_string();
             }
-            _ => {}
+            rule.filter = Some(filter);
+        } else {
+            rule.target = params[2].to_string();
+            match rule.type_field.as_str() {
+                "IP-CIDR" | "DOMAIN" | "DOMAIN-SUFFIX" | "DOMAIN-KEYWORD" | "GEOIP"
+                | "EXTERNAL" | "RULE-SET" | "PORT-RANGE" | "NETWORK" | "INBOUND-TAG"
+                | "PROCESS-NAME" => {
+                    rule.filter = Some(params[1].to_string());
+                }
+                _ => {}
+            }
         }
 
         rules.push(rule);
@@ -1612,12 +1637,14 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
 
             if let Some(filter) = &ext_rule.filter {
                 match ext_rule.type_field.as_str() {
+                    "EXTERNAL-SUFFIX" => rule.external = Some(vec![format!("suffix:{}", filter)]),
+                    "EXTERNAL-KEYWORD" => rule.external = Some(vec![format!("keyword:{}", filter)]),
                     "IP-CIDR" => rule.ip = Some(vec![filter.clone()]),
                     "DOMAIN" => rule.domain = Some(vec![filter.clone()]),
                     "DOMAIN-KEYWORD" => rule.domain_keyword = Some(vec![filter.clone()]),
                     "DOMAIN-SUFFIX" => rule.domain_suffix = Some(vec![filter.clone()]),
                     "GEOIP" => rule.geoip = Some(vec![filter.clone()]),
-                    "EXTERNAL" => rule.external = Some(vec![filter.clone()]),
+                    "EXTERNAL" | "RULE-SET" => rule.external = Some(vec![filter.clone()]),
                     "PORT-RANGE" => rule.port_range = Some(vec![filter.clone()]),
                     "NETWORK" => rule.network = Some(vec![filter.clone()]),
                     "INBOUND-TAG" => rule.inbound_tag = Some(vec![filter.clone()]),
@@ -2151,6 +2178,74 @@ post-start = echo start=1
         let lifecycle = lifecycle_from_string(conf).unwrap();
         assert_eq!(lifecycle.post_start.as_deref(), Some("echo start=1"));
         assert!(std::env::var(key).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_external_http_suffix_and_keyword_rules() {
+        use crate::app::dns::DnsClient;
+        use crate::app::router::Router;
+        use crate::session::{Session, SocksAddr};
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                if let Ok(mut stream) = stream {
+                    let mut buf = [0u8; 1024];
+                    let _ = stream.read(&mut buf);
+                    let body = "google.com\n.baidu.com\n";
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            }
+        });
+
+        let conf = format!(
+            r#"
+[Proxy]
+Direct = direct
+Proxy = socks, 127.0.0.1, 1080
+
+[Rule]
+EXTERNAL-SUFFIX, http://127.0.0.1:{}/suffix.txt, Proxy, 1
+EXTERNAL-KEYWORD, http://127.0.0.1:{}/keyword.txt, Proxy, 1
+FINAL, Direct
+"#,
+            port, port
+        );
+
+        let lines: Vec<io::Result<String>> = conf.lines().map(|s| Ok(s.to_string())).collect();
+        let config = from_lines(lines).unwrap();
+        let mut internal = to_internal(&config).unwrap();
+
+        let dns_client = Arc::new(RwLock::new(DnsClient::new(&internal.dns).unwrap()));
+        let router = Router::new(&mut internal.router, dns_client);
+
+        // Wait a short moment for background task to fetch HTTP data
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        let sess = Session {
+            destination: SocksAddr::Domain("news.google.com".to_string(), 443),
+            ..Default::default()
+        };
+        let target = router.pick_route(&sess).await.unwrap();
+        assert_eq!(target, Some(&"Proxy".to_string()));
+
+        let sess2 = Session {
+            destination: SocksAddr::Domain("example.com".to_string(), 80),
+            ..Default::default()
+        };
+        let target2 = router.pick_route(&sess2).await.unwrap();
+        assert_eq!(target2, None);
     }
 }
 

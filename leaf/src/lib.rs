@@ -213,7 +213,7 @@ impl RuntimeManager {
             timeout(to, test_tcp(dns_client.clone(), handler.clone())),
             timeout(to, test_udp(dns_client, handler)),
         )
-            .await;
+        .await;
 
         let tcp_res = match tcp_res.map_err(|e| e.into()) {
             Err(e) => Err(e),
@@ -346,8 +346,8 @@ impl RuntimeManager {
                             match ev.kind {
                                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                                 event::EventKind::Modify(event::ModifyKind::Data(
-                                                             event::DataChange::Content,
-                                                         )) => {
+                                    event::DataChange::Content,
+                                )) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
                                         warn!("reload config file failed: {}", e);
@@ -355,8 +355,8 @@ impl RuntimeManager {
                                 }
                                 #[cfg(any(target_os = "linux", target_os = "android"))]
                                 event::EventKind::Access(event::AccessKind::Close(
-                                                             event::AccessMode::Write,
-                                                         ))
+                                    event::AccessMode::Write,
+                                ))
                                 | event::EventKind::Remove(event::RemoveKind::File) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
@@ -365,8 +365,8 @@ impl RuntimeManager {
                                 }
                                 #[cfg(target_os = "windows")]
                                 event::EventKind::Modify(event::ModifyKind::Data(
-                                                             event::DataChange::Any,
-                                                         )) => {
+                                    event::DataChange::Any,
+                                )) => {
                                     info!("config file event matched: {:?}", ev);
                                     if let Err(e) = reload(rt_id) {
                                         warn!("reload config file failed: {}", e);
@@ -390,7 +390,7 @@ impl RuntimeManager {
                         }
                     }
                 })
-                    .map_err(Error::Watcher)?;
+                .map_err(Error::Watcher)?;
             watcher
                 .watch(
                     std::path::Path::new(&config_path),

@@ -1615,22 +1615,46 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                 }
                 if let Some(ext_domain_keywords) = ext_rule.domain_keyword.as_mut() {
                     for ext_domain_keyword in ext_domain_keywords.drain(0..) {
-                        let mut domain = internal::router::rule::Domain::new();
-                        domain.type_ = protobuf::EnumOrUnknown::new(
-                            internal::router::rule::domain::Type::PLAIN,
-                        );
-                        domain.value = ext_domain_keyword;
-                        rule.domains.push(domain);
+                        if ext_domain_keyword.starts_with("http://")
+                            || ext_domain_keyword.starts_with("https://")
+                        {
+                            let mut domain = internal::router::rule::Domain::new();
+                            domain.type_ = protobuf::EnumOrUnknown::new(
+                                internal::router::rule::domain::Type::PLAIN,
+                            );
+                            domain.value =
+                                format!("__remote_rule__:keyword:{}:3600", ext_domain_keyword);
+                            rule.domains.push(domain);
+                        } else {
+                            let mut domain = internal::router::rule::Domain::new();
+                            domain.type_ = protobuf::EnumOrUnknown::new(
+                                internal::router::rule::domain::Type::PLAIN,
+                            );
+                            domain.value = ext_domain_keyword;
+                            rule.domains.push(domain);
+                        }
                     }
                 }
                 if let Some(ext_domain_suffixes) = ext_rule.domain_suffix.as_mut() {
                     for ext_domain_suffix in ext_domain_suffixes.drain(0..) {
-                        let mut domain = internal::router::rule::Domain::new();
-                        domain.type_ = protobuf::EnumOrUnknown::new(
-                            internal::router::rule::domain::Type::DOMAIN,
-                        );
-                        domain.value = ext_domain_suffix;
-                        rule.domains.push(domain);
+                        if ext_domain_suffix.starts_with("http://")
+                            || ext_domain_suffix.starts_with("https://")
+                        {
+                            let mut domain = internal::router::rule::Domain::new();
+                            domain.type_ = protobuf::EnumOrUnknown::new(
+                                internal::router::rule::domain::Type::DOMAIN,
+                            );
+                            domain.value =
+                                format!("__remote_rule__:suffix:{}:3600", ext_domain_suffix);
+                            rule.domains.push(domain);
+                        } else {
+                            let mut domain = internal::router::rule::Domain::new();
+                            domain.type_ = protobuf::EnumOrUnknown::new(
+                                internal::router::rule::domain::Type::DOMAIN,
+                            );
+                            domain.value = ext_domain_suffix;
+                            rule.domains.push(domain);
+                        }
                     }
                 }
                 if let Some(ext_geoips) = ext_rule.geoip.as_mut() {

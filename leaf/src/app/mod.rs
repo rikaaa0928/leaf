@@ -9,6 +9,7 @@ pub mod inbound;
 pub mod logger;
 pub mod nat_manager;
 pub mod outbound;
+pub mod remote_rule;
 pub mod router;
 #[cfg(feature = "routing-history")]
 pub mod routing_history;

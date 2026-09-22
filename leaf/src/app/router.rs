@@ -481,7 +481,45 @@ impl Router {
             let mut cond_and = ConditionAnd::new();
 
             if !rr.domains.is_empty() {
-                cond_and.add(Box::new(DomainMatcher::new(&mut rr.domains)));
+                let mut remote_matchers = Vec::new();
+                let mut static_domains = Vec::new();
+                for domain in rr.domains.drain(..) {
+                    if let Some(spec) = domain.value.strip_prefix("__remote_rule__:") {
+                        let parts: Vec<&str> = spec.splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            let rule_type = match parts[0] {
+                                "keyword" => crate::app::remote_rule::RemoteRuleType::Keyword,
+                                _ => crate::app::remote_rule::RemoteRuleType::Suffix,
+                            };
+                            let rest = parts[1];
+                            let (url, interval_secs) =
+                                if let Some((u, i_str)) = rest.rsplit_once(':') {
+                                    if let Ok(i) = i_str.parse::<u64>() {
+                                        (u.to_string(), i)
+                                    } else {
+                                        (rest.to_string(), 3600u64)
+                                    }
+                                } else {
+                                    (rest.to_string(), 3600u64)
+                                };
+                            let interval = std::time::Duration::from_secs(interval_secs);
+                            remote_matchers.push(
+                                crate::app::remote_rule::RemoteDomainMatcher::new(
+                                    url, rule_type, interval,
+                                ),
+                            );
+                        }
+                    } else {
+                        static_domains.push(domain);
+                    }
+                }
+
+                if !static_domains.is_empty() {
+                    cond_and.add(Box::new(DomainMatcher::new(&mut static_domains)));
+                }
+                for rm in remote_matchers {
+                    cond_and.add(Box::new(rm));
+                }
             }
 
             if !rr.ip_cidrs.is_empty() {

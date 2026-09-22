@@ -396,3 +396,68 @@ fn test_shadowsocks_inbound_default_method_mapping() {
     assert_eq!(inbound.method, "chacha20-ietf-poly1305");
     assert_eq!(inbound.password, "password");
 }
+
+#[tokio::test]
+async fn test_json_http_external_suffix_and_keyword_rules() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            if let Ok(mut stream) = stream {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let body = "google.com\n.baidu.com\n";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        }
+    });
+
+    let json_str = format!(
+        r#"
+    {{
+        "outbounds": [
+            {{
+                "protocol": "direct",
+                "tag": "direct"
+            }}
+        ],
+        "router": {{
+            "rules": [
+                {{
+                    "domainSuffix": [
+                        "http://127.0.0.1:{}/suffix.txt"
+                    ],
+                    "target": "direct"
+                }},
+                {{
+                    "external": [
+                        "keyword:http://127.0.0.1:{}/keyword.txt"
+                    ],
+                    "target": "direct"
+                }}
+            ]
+        }}
+    }}
+    "#,
+        port, port
+    );
+
+    let mut config = crate::config::json::from_string(&json_str).unwrap();
+    let dns_client = std::sync::Arc::new(tokio::sync::RwLock::new(
+        crate::app::dns::DnsClient::new(&config.dns).unwrap(),
+    ));
+    let router = crate::app::router::Router::new(&mut config.router, dns_client);
+    assert!(router
+        .pick_route(&crate::session::Session::default())
+        .await
+        .is_ok());
+}
