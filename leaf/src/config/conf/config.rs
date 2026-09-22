@@ -246,8 +246,13 @@ where
 }
 
 fn remove_comments(text: &str) -> Cow<'_, str> {
-    let re = Regex::new(r"(#[^*]*)").unwrap();
-    re.replace(text, "")
+    let re = Regex::new(r"(?:^|\s)(#[^*]*)").unwrap();
+    if let Some(m) = re.find(text) {
+        let hash_idx = text[m.start()..m.end()].find('#').unwrap_or(0);
+        Cow::Borrowed(&text[..m.start() + hash_idx])
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 fn get_section(text: &str) -> Option<&str> {
@@ -977,29 +982,8 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
         }
 
         if rule.type_field == "EXTERNAL-SUFFIX" || rule.type_field == "EXTERNAL-KEYWORD" {
-            let mut filter = params[1].clone();
-            if params.len() >= 4 {
-                if let Ok(iv) = params[2]
-                    .trim()
-                    .trim_start_matches("interval=")
-                    .parse::<u64>()
-                {
-                    rule.target = params[3].to_string();
-                    filter = format!("{}:{}", filter, iv);
-                } else if let Ok(iv) = params[3]
-                    .trim()
-                    .trim_start_matches("interval=")
-                    .parse::<u64>()
-                {
-                    rule.target = params[2].to_string();
-                    filter = format!("{}:{}", filter, iv);
-                } else {
-                    rule.target = params[2].to_string();
-                }
-            } else {
-                rule.target = params[2].to_string();
-            }
-            rule.filter = Some(filter);
+            rule.target = params[2].to_string();
+            rule.filter = Some(params[1].clone());
         } else {
             rule.target = params[2].to_string();
             match rule.type_field.as_str() {
@@ -2216,8 +2200,8 @@ Direct = direct
 Proxy = socks, 127.0.0.1, 1080
 
 [Rule]
-EXTERNAL-SUFFIX, http://127.0.0.1:{}/suffix.txt, Proxy, 1
-EXTERNAL-KEYWORD, http://127.0.0.1:{}/keyword.txt, Proxy, 1
+EXTERNAL-SUFFIX, http://127.0.0.1:{}/suffix.txt#interval=1, Proxy
+EXTERNAL-KEYWORD, http://127.0.0.1:{}/keyword.txt#interval=1, Proxy
 FINAL, Direct
 "#,
             port, port

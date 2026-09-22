@@ -61,20 +61,13 @@ pub fn parse_remote_spec(raw: &str) -> Option<(&'static str, String, u64)> {
     let rest = rest.trim();
     let mut interval = 3600u64;
     let url;
-    if let Some((u, int_str)) = rest.rsplit_once('#') {
-        if let Some(val) = int_str.strip_prefix("interval=") {
+    if let Some((u, hash_part)) = rest.split_once('#') {
+        if let Some(val) = hash_part.strip_prefix("interval=") {
             if let Ok(v) = val.parse::<u64>() {
                 interval = v;
             }
         }
         url = u.to_string();
-    } else if let Some((u, int_str)) = rest.rsplit_once(':') {
-        if let Ok(v) = int_str.parse::<u64>() {
-            interval = v;
-            url = u.to_string();
-        } else {
-            url = rest.to_string();
-        }
     } else {
         url = rest.to_string();
     }

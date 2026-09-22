@@ -1623,7 +1623,7 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                 internal::router::rule::domain::Type::PLAIN,
                             );
                             domain.value =
-                                format!("__remote_rule__:keyword:{}:3600", ext_domain_keyword);
+                                format!("__remote_rule__|keyword|{}|3600", ext_domain_keyword);
                             rule.domains.push(domain);
                         } else {
                             let mut domain = internal::router::rule::Domain::new();
@@ -1645,7 +1645,7 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                                 internal::router::rule::domain::Type::DOMAIN,
                             );
                             domain.value =
-                                format!("__remote_rule__:suffix:{}:3600", ext_domain_suffix);
+                                format!("__remote_rule__|suffix|{}|3600", ext_domain_suffix);
                             rule.domains.push(domain);
                         } else {
                             let mut domain = internal::router::rule::Domain::new();
