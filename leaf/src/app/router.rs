@@ -484,7 +484,23 @@ impl Router {
                 let mut remote_matchers = Vec::new();
                 let mut static_domains = Vec::new();
                 for domain in rr.domains.drain(..) {
-                    if let Some(spec) = domain.value.strip_prefix("__remote_rule__:") {
+                    if let Some(spec) = domain.value.strip_prefix("__remote_rule__|") {
+                        let parts: Vec<&str> = spec.split('|').collect();
+                        if parts.len() >= 3 {
+                            let rule_type = match parts[0] {
+                                "keyword" => crate::app::remote_rule::RemoteRuleType::Keyword,
+                                _ => crate::app::remote_rule::RemoteRuleType::Suffix,
+                            };
+                            let url = parts[1].to_string();
+                            let interval_secs = parts[2].parse::<u64>().unwrap_or(3600);
+                            let interval = std::time::Duration::from_secs(interval_secs);
+                            remote_matchers.push(
+                                crate::app::remote_rule::RemoteDomainMatcher::new(
+                                    url, rule_type, interval,
+                                ),
+                            );
+                        }
+                    } else if let Some(spec) = domain.value.strip_prefix("__remote_rule__:") {
                         let parts: Vec<&str> = spec.splitn(2, ':').collect();
                         if parts.len() == 2 {
                             let rule_type = match parts[0] {
