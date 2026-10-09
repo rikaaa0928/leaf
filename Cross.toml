@@ -47,6 +47,14 @@ passthrough = ["PROTOC=/opt/.local/bin/protoc"]
 
 [target.x86_64-pc-windows-gnu]
 image = "ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
+# mingw's `malloc.h` includes `mm_malloc.h`, which is a header the compiler is
+# expected to supply rather than the sysroot. clang has one, in its resource
+# directory; the libclang that bindgen loads in this image does not put that
+# directory on the include path for a `*-windows-gnu` target, so a build script
+# that parses lwIP's headers -- netstack-lwip's does, for the exact target --
+# fails on a header that is right there. Linking it into the sysroot clang is
+# already searching is enough, and the glob keeps it from breaking the next
+# time the image moves to a new LLVM.
 pre-build = [
     "apt-get update",
     "apt-get install -y unzip clang",
@@ -54,7 +62,7 @@ pre-build = [
     "unzip protoc-28.2-linux-x86_64.zip -d /opt/.local",
     "export PATH=\"$PATH:/opt/.local/bin\";chmod +x /opt/.local/bin/protoc",
     "protoc --version;export PROTOC=/opt/.local/bin/protoc",
+    "ln -sf \"$(ls -d /usr/lib/clang/*/include | head -1)/mm_malloc.h\" /usr/x86_64-w64-mingw32/include/mm_malloc.h",
 ]
 [target.x86_64-pc-windows-gnu.env]
 passthrough = ["PROTOC=/opt/.local/bin/protoc"]
-
