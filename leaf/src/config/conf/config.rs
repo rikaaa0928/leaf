@@ -981,9 +981,18 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
             continue; // at lease 3 params except the FINAL rule
         }
 
-        if rule.type_field == "EXTERNAL-SUFFIX" || rule.type_field == "EXTERNAL-KEYWORD" {
+        if rule.type_field == "EXTERNAL-SUFFIX"
+            || rule.type_field == "EXTERNAL-KEYWORD"
+            || rule.type_field == "EXTERNAL-CIDR"
+        {
             rule.target = params[2].to_string();
-            rule.filter = Some(params[1].clone());
+            let mut filter = params[1].to_string();
+            if params.len() >= 4 && !filter.contains('#') {
+                if let Ok(secs) = params[3].parse::<u64>() {
+                    filter = format!("{}#interval={}", filter, secs);
+                }
+            }
+            rule.filter = Some(filter);
         } else {
             rule.target = params[2].to_string();
             match rule.type_field.as_str() {
@@ -1623,6 +1632,7 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                 match ext_rule.type_field.as_str() {
                     "EXTERNAL-SUFFIX" => rule.external = Some(vec![format!("suffix:{}", filter)]),
                     "EXTERNAL-KEYWORD" => rule.external = Some(vec![format!("keyword:{}", filter)]),
+                    "EXTERNAL-CIDR" => rule.external = Some(vec![format!("cidr:{}", filter)]),
                     "IP-CIDR" => rule.ip = Some(vec![filter.clone()]),
                     "DOMAIN" => rule.domain = Some(vec![filter.clone()]),
                     "DOMAIN-KEYWORD" => rule.domain_keyword = Some(vec![filter.clone()]),
@@ -2170,7 +2180,7 @@ post-start = echo start=1
         use crate::app::router::Router;
         use crate::session::{Session, SocksAddr};
         use std::io::{Read, Write};
-        use std::net::TcpListener;
+        use std::net::{SocketAddr, TcpListener};
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
@@ -2182,7 +2192,7 @@ post-start = echo start=1
                 if let Ok(mut stream) = stream {
                     let mut buf = [0u8; 1024];
                     let _ = stream.read(&mut buf);
-                    let body = "google.com\n.baidu.com\n";
+                    let body = "google.com\n.baidu.com\n10.0.0.0/8\n";
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{}",
                         body.len(),
@@ -2202,9 +2212,10 @@ Proxy = socks, 127.0.0.1, 1080
 [Rule]
 EXTERNAL-SUFFIX, http://127.0.0.1:{}/suffix.txt#interval=1, Proxy
 EXTERNAL-KEYWORD, http://127.0.0.1:{}/keyword.txt#interval=1, Proxy
+EXTERNAL-CIDR, http://127.0.0.1:{}/cidr.txt#interval=1, Proxy
 FINAL, Direct
 "#,
-            port, port
+            port, port, port
         );
 
         let lines: Vec<io::Result<String>> = conf.lines().map(|s| Ok(s.to_string())).collect();
@@ -2223,6 +2234,13 @@ FINAL, Direct
         };
         let target = router.pick_route(&sess).await.unwrap();
         assert_eq!(target, Some(&"Proxy".to_string()));
+
+        let sess_cidr = Session {
+            destination: SocksAddr::Ip("10.1.2.3:80".parse::<SocketAddr>().unwrap()),
+            ..Default::default()
+        };
+        let target_cidr = router.pick_route(&sess_cidr).await.unwrap();
+        assert_eq!(target_cidr, Some(&"Proxy".to_string()));
 
         let sess2 = Session {
             destination: SocksAddr::Domain("example.com".to_string(), 80),

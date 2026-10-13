@@ -48,9 +48,17 @@ pub fn parse_remote_spec(raw: &str) -> Option<(&'static str, String, u64)> {
         .or_else(|| raw.strip_prefix("domain_keyword:"))
     {
         ("keyword", r)
+    } else if let Some(r) = raw
+        .strip_prefix("cidr:")
+        .or_else(|| raw.strip_prefix("ip-cidr:"))
+        .or_else(|| raw.strip_prefix("ip_cidr:"))
+    {
+        ("cidr", r)
     } else if raw.starts_with("http://") || raw.starts_with("https://") {
         if raw.to_lowercase().contains("keyword") {
             ("keyword", raw)
+        } else if raw.to_lowercase().contains("cidr") {
+            ("cidr", raw)
         } else {
             ("suffix", raw)
         }
@@ -149,6 +157,11 @@ pub fn add_external_rule(rule: &mut internal::router::Rule, ext_external: &str) 
     }
 
     if let Some((rule_type, url, interval)) = parse_remote_spec(ext_external) {
+        if rule_type == "cidr" {
+            rule.ip_cidrs
+                .push(format!("__remote_rule__|cidr|{}|{}", url, interval));
+            return Ok(());
+        }
         let mut d = internal::router::rule::Domain::new();
         d.type_ = protobuf::EnumOrUnknown::new(internal::router::rule::domain::Type::PLAIN);
         d.value = format!("__remote_rule__|{}|{}|{}", rule_type, url, interval);

@@ -487,13 +487,19 @@ impl Router {
                     if let Some(spec) = domain.value.strip_prefix("__remote_rule__|") {
                         let parts: Vec<&str> = spec.split('|').collect();
                         if parts.len() >= 3 {
+                            let url = parts[1].to_string();
+                            let interval_secs = parts[2].parse::<u64>().unwrap_or(3600);
+                            let interval = std::time::Duration::from_secs(interval_secs);
+                            if parts[0] == "cidr" {
+                                cond_and.add(Box::new(
+                                    crate::app::remote_rule::RemoteIpCidrMatcher::new(url, interval),
+                                ));
+                                continue;
+                            }
                             let rule_type = match parts[0] {
                                 "keyword" => crate::app::remote_rule::RemoteRuleType::Keyword,
                                 _ => crate::app::remote_rule::RemoteRuleType::Suffix,
                             };
-                            let url = parts[1].to_string();
-                            let interval_secs = parts[2].parse::<u64>().unwrap_or(3600);
-                            let interval = std::time::Duration::from_secs(interval_secs);
                             remote_matchers.push(
                                 crate::app::remote_rule::RemoteDomainMatcher::new(
                                     url, rule_type, interval,
@@ -503,10 +509,6 @@ impl Router {
                     } else if let Some(spec) = domain.value.strip_prefix("__remote_rule__:") {
                         let parts: Vec<&str> = spec.splitn(2, ':').collect();
                         if parts.len() == 2 {
-                            let rule_type = match parts[0] {
-                                "keyword" => crate::app::remote_rule::RemoteRuleType::Keyword,
-                                _ => crate::app::remote_rule::RemoteRuleType::Suffix,
-                            };
                             let rest = parts[1];
                             let (url, interval_secs) =
                                 if let Some((u, i_str)) = rest.rsplit_once(':') {
@@ -519,6 +521,16 @@ impl Router {
                                     (rest.to_string(), 3600u64)
                                 };
                             let interval = std::time::Duration::from_secs(interval_secs);
+                            if parts[0] == "cidr" {
+                                cond_and.add(Box::new(
+                                    crate::app::remote_rule::RemoteIpCidrMatcher::new(url, interval),
+                                ));
+                                continue;
+                            }
+                            let rule_type = match parts[0] {
+                                "keyword" => crate::app::remote_rule::RemoteRuleType::Keyword,
+                                _ => crate::app::remote_rule::RemoteRuleType::Suffix,
+                            };
                             remote_matchers.push(
                                 crate::app::remote_rule::RemoteDomainMatcher::new(
                                     url, rule_type, interval,
@@ -539,7 +551,49 @@ impl Router {
             }
 
             if !rr.ip_cidrs.is_empty() {
-                cond_and.add(Box::new(IpCidrMatcher::new(&mut rr.ip_cidrs)));
+                let mut static_cidrs = Vec::new();
+                let mut remote_cidr_matchers = Vec::new();
+                for ip in rr.ip_cidrs.drain(..) {
+                    if let Some(spec) = ip.strip_prefix("__remote_rule__|") {
+                        let parts: Vec<&str> = spec.split('|').collect();
+                        if parts.len() >= 3 {
+                            let url = parts[1].to_string();
+                            let interval_secs = parts[2].parse::<u64>().unwrap_or(3600);
+                            let interval = std::time::Duration::from_secs(interval_secs);
+                            remote_cidr_matchers.push(
+                                crate::app::remote_rule::RemoteIpCidrMatcher::new(url, interval),
+                            );
+                        }
+                    } else if let Some(spec) = ip.strip_prefix("__remote_rule__:") {
+                        let parts: Vec<&str> = spec.splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            let rest = parts[1];
+                            let (url, interval_secs) =
+                                if let Some((u, i_str)) = rest.rsplit_once(':') {
+                                    if let Ok(i) = i_str.parse::<u64>() {
+                                        (u.to_string(), i)
+                                    } else {
+                                        (rest.to_string(), 3600u64)
+                                    }
+                                } else {
+                                    (rest.to_string(), 3600u64)
+                                };
+                            let interval = std::time::Duration::from_secs(interval_secs);
+                            remote_cidr_matchers.push(
+                                crate::app::remote_rule::RemoteIpCidrMatcher::new(url, interval),
+                            );
+                        }
+                    } else {
+                        static_cidrs.push(ip);
+                    }
+                }
+
+                if !static_cidrs.is_empty() {
+                    cond_and.add(Box::new(IpCidrMatcher::new(&mut static_cidrs)));
+                }
+                for rm in remote_cidr_matchers {
+                    cond_and.add(Box::new(rm));
+                }
             }
 
             if !rr.mmdbs.is_empty() {

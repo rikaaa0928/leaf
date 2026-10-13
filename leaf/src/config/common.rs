@@ -1550,7 +1550,21 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
 
                 if let Some(ext_ips) = ext_rule.ip.as_mut() {
                     for ext_ip in ext_ips.drain(0..) {
-                        rule.ip_cidrs.push(ext_ip);
+                        if ext_ip.starts_with("http://") || ext_ip.starts_with("https://") {
+                            let (url, interval) = if let Some((u, hash)) = ext_ip.split_once('#') {
+                                if let Some(val) = hash.strip_prefix("interval=") {
+                                    (u.to_string(), val.parse::<u64>().unwrap_or(3600))
+                                } else {
+                                    (u.to_string(), 3600u64)
+                                }
+                            } else {
+                                (ext_ip, 3600u64)
+                            };
+                            rule.ip_cidrs
+                                .push(format!("__remote_rule__|cidr|{}|{}", url, interval));
+                        } else {
+                            rule.ip_cidrs.push(ext_ip);
+                        }
                     }
                 }
                 if let Some(ext_domains) = ext_rule.domain.as_mut() {
