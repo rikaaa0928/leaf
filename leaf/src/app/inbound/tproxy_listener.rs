@@ -41,6 +41,23 @@ const IPV6_ORIGDSTADDR: libc::c_int = 74;
 const IPV6_TRANSPARENT: libc::c_int = 75;
 
 const DEFAULT_TPROXY_SENDER_LRU_CAP: usize = 512;
+const TPROXY_UDP_RECV_BUF_SIZE: usize = 65536; // 64 KiB to safely hold maximum UDP datagram size
+
+#[repr(C, align(8))]
+struct AlignedControlBuf([u8; 256]);
+
+fn unmapped_socket_addr(addr: SocketAddr) -> SocketAddr {
+    match addr {
+        SocketAddr::V6(v6) => {
+            if let Some(v4) = v6.ip().to_ipv4() {
+                SocketAddr::new(std::net::IpAddr::V4(v4), v6.port())
+            } else {
+                SocketAddr::V6(v6)
+            }
+        }
+        v4 => v4,
+    }
+}
 
 fn setsockopt_int(
     fd: libc::c_int,
@@ -143,29 +160,39 @@ fn recv_with_origdst(
     buf: &mut [u8],
 ) -> io::Result<(usize, SocketAddr, SocketAddr)> {
     // SAFETY: all pointers below outlive the recvmsg call and point to
-    // correctly sized, owned storage.
+    // correctly sized, aligned storage.
     unsafe {
         let mut name: libc::sockaddr_storage = mem::zeroed();
         let mut iov = libc::iovec {
             iov_base: buf.as_mut_ptr() as *mut libc::c_void,
             iov_len: buf.len(),
         };
-        let mut control = [0u8; 128];
+        let mut control = AlignedControlBuf([0u8; 256]);
         let mut msg: libc::msghdr = mem::zeroed();
         msg.msg_name = &mut name as *mut libc::sockaddr_storage as *mut libc::c_void;
         msg.msg_namelen = mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
         msg.msg_iov = &mut iov;
         msg.msg_iovlen = 1;
-        msg.msg_control = control.as_mut_ptr() as *mut libc::c_void;
-        msg.msg_controllen = control.len() as _;
+        msg.msg_control = control.0.as_mut_ptr() as *mut libc::c_void;
+        msg.msg_controllen = control.0.len() as _;
 
         let n = libc::recvmsg(fd, &mut msg, 0);
         if n < 0 {
             return Err(io::Error::last_os_error());
         }
 
-        let src = storage_to_socketaddr(&name, msg.msg_namelen)
+        // Explicitly reject truncated datagrams to prevent forwarding corrupted packets.
+        if (msg.msg_flags & libc::MSG_TRUNC) != 0 {
+            return Err(io::Error::other(format!(
+                "tproxy: udp datagram truncated (reported size {}, buffer was {})",
+                n,
+                buf.len()
+            )));
+        }
+
+        let raw_src = storage_to_socketaddr(&name, msg.msg_namelen)
             .ok_or_else(|| io::Error::other("tproxy: bad source address"))?;
+        let src = unmapped_socket_addr(raw_src);
 
         let mut dst: Option<SocketAddr> = None;
         let mut cmsg = libc::CMSG_FIRSTHDR(&msg);
@@ -175,19 +202,33 @@ fn recv_with_origdst(
             let is_v4 = level == libc::SOL_IP && ctype == IP_ORIGDSTADDR;
             let is_v6 = level == libc::SOL_IPV6 && ctype == IPV6_ORIGDSTADDR;
             if is_v4 || is_v6 {
-                let data = libc::CMSG_DATA(cmsg) as *const u8;
-                let mut storage: libc::sockaddr_storage = mem::zeroed();
-                let len = if is_v4 {
+                let required_len = if is_v4 {
                     mem::size_of::<libc::sockaddr_in>()
                 } else {
                     mem::size_of::<libc::sockaddr_in6>()
                 };
-                std::ptr::copy_nonoverlapping(
-                    data,
-                    &mut storage as *mut libc::sockaddr_storage as *mut u8,
-                    len,
-                );
-                dst = storage_to_socketaddr(&storage, len as libc::socklen_t);
+                let cmsg_len = (*cmsg).cmsg_len as usize;
+                let header_len = libc::CMSG_LEN(0) as usize;
+                if cmsg_len >= header_len + required_len {
+                    let data = libc::CMSG_DATA(cmsg) as *const u8;
+                    let mut storage: libc::sockaddr_storage = mem::zeroed();
+                    std::ptr::copy_nonoverlapping(
+                        data,
+                        &mut storage as *mut libc::sockaddr_storage as *mut u8,
+                        required_len,
+                    );
+                    if let Some(raw_dst) =
+                        storage_to_socketaddr(&storage, required_len as libc::socklen_t)
+                    {
+                        dst = Some(unmapped_socket_addr(raw_dst));
+                    }
+                } else {
+                    warn!(
+                        "tproxy: origdst cmsg too short: {} < {}",
+                        cmsg_len,
+                        header_len + required_len
+                    );
+                }
             }
             cmsg = libc::CMSG_NXTHDR(&msg, cmsg);
         }
@@ -248,10 +289,25 @@ impl TproxySendHalf {
         src_addr: &SocksAddr,
         dst_addr: &SocketAddr,
     ) -> io::Result<usize> {
-        let src = src_addr
+        let src_ip = src_addr
             .ip()
-            .map(|ip| SocketAddr::new(ip, src_addr.port()))
             .ok_or_else(|| io::Error::other("tproxy: reply source is not an ip"))?;
+        let src = unmapped_socket_addr(SocketAddr::new(src_ip, src_addr.port()));
+        let mut dst = unmapped_socket_addr(*dst_addr);
+
+        // Defensive normalization: if one is IPv4 and one is IPv6, align them
+        if src.is_ipv4() && dst.is_ipv6() {
+            if let std::net::IpAddr::V6(v6) = dst.ip() {
+                if let Some(v4) = v6.to_ipv4() {
+                    dst = SocketAddr::new(std::net::IpAddr::V4(v4), dst.port());
+                }
+            }
+        } else if src.is_ipv6() && dst.is_ipv4() {
+            if let std::net::IpAddr::V4(v4) = dst.ip() {
+                dst = SocketAddr::new(std::net::IpAddr::V6(v4.to_ipv6_mapped()), dst.port());
+            }
+        }
+
         if !self.senders.contains(&src) {
             let socket = new_tproxy_udp_sender(src)?;
             self.senders.put(src, socket);
@@ -260,7 +316,7 @@ impl TproxySendHalf {
             .senders
             .get_mut(&src)
             .expect("sender socket must exist after ensure");
-        socket.send_to(buf, dst_addr).await
+        socket.send_to(buf, &dst).await
     }
 }
 
@@ -298,12 +354,13 @@ impl TproxyInboundListener {
                     match listener.accept().await {
                         Ok((stream, peer)) => {
                             let orig = match stream.local_addr() {
-                                Ok(a) => a,
+                                Ok(a) => unmapped_socket_addr(a),
                                 Err(e) => {
                                     debug!("tproxy: no original destination: {}", e);
                                     continue;
                                 }
                             };
+                            let peer = unmapped_socket_addr(peer);
                             if orig == listen_addr {
                                 debug!("tproxy: loopback TCP connection detected to {}, dropping", orig);
                                 continue;
@@ -368,7 +425,7 @@ impl TproxyInboundListener {
                 });
 
                 // Uplink: client datagrams into the NAT manager.
-                let mut buf = vec![0u8; *crate::option::DATAGRAM_BUFFER_SIZE * 1024];
+                let mut buf = vec![0u8; TPROXY_UDP_RECV_BUF_SIZE];
                 let loopback_dst = SocksAddr::from(listen_addr);
                 loop {
                     match lr.recv_from(&mut buf).await {
@@ -390,10 +447,16 @@ impl TproxyInboundListener {
                             let pkt = UdpPacket::new(
                                 buf[..n].to_vec(),
                                 SocksAddr::from(dgram_src.address),
-                                dst_addr,
+                                dst_addr.clone(),
+                            );
+                            let dgram_src_with_target = DatagramSource::new_with_target(
+                                dgram_src.address,
+                                None,
+                                Some(dst_addr),
+                                Some(tag.clone()),
                             );
                             nat_manager
-                                .send(None, &dgram_src, &tag, &l_tx, pkt)
+                                .send(None, &dgram_src_with_target, &tag, &l_tx, pkt)
                                 .await;
                         }
                     }

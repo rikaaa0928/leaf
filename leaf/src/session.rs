@@ -44,6 +44,8 @@ pub struct DatagramSource {
     pub address: SocketAddr,
     pub stream_id: Option<StreamId>,
     pub process_name: Option<String>,
+    pub destination: Option<SocksAddr>,
+    pub inbound_tag: Option<String>,
 }
 
 impl DatagramSource {
@@ -52,6 +54,8 @@ impl DatagramSource {
             address,
             stream_id,
             process_name: None,
+            destination: None,
+            inbound_tag: None,
         }
     }
 
@@ -64,17 +68,40 @@ impl DatagramSource {
             address,
             stream_id,
             process_name,
+            destination: None,
+            inbound_tag: None,
+        }
+    }
+
+    pub fn new_with_target(
+        address: SocketAddr,
+        stream_id: Option<StreamId>,
+        destination: Option<SocksAddr>,
+        inbound_tag: Option<String>,
+    ) -> Self {
+        DatagramSource {
+            address,
+            stream_id,
+            process_name: None,
+            destination,
+            inbound_tag,
         }
     }
 }
 
 impl std::fmt::Display for DatagramSource {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.address)?;
         if let Some(id) = self.stream_id.as_ref() {
-            write!(f, "{}(stream-{})", self.address, id)
-        } else {
-            write!(f, "{}", self.address)
+            write!(f, "(stream-{})", id)?;
         }
+        if let Some(dst) = self.destination.as_ref() {
+            write!(f, "->{}", dst)?;
+        }
+        if let Some(tag) = self.inbound_tag.as_ref() {
+            write!(f, "[{}]", tag)?;
+        }
+        Ok(())
     }
 }
 
@@ -239,7 +266,7 @@ pub enum SocksAddrWireType {
     PortLast,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SocksAddr {
     Ip(SocketAddr),
     Domain(String, u16),

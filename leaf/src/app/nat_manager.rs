@@ -121,10 +121,24 @@ impl NatManager {
         client_ch_tx: &Sender<UdpPacket>,
         pkt: UdpPacket,
     ) {
+        // Construct a session key that distinguishes destination and inbound_tag.
+        // This ensures that:
+        // 1. When a client sends to different destinations using the same source port,
+        //    each destination will have its route selected independently instead of
+        //    reusing the first destination's outbound route.
+        // 2. Different inbound listeners are properly isolated from each other.
+        let mut key = dgram_src.clone();
+        if key.inbound_tag.is_none() {
+            key.inbound_tag = Some(inbound_tag.to_string());
+        }
+        if key.destination.is_none() {
+            key.destination = Some(pkt.dst_addr.clone());
+        }
+
         let mut guard = self.sessions.lock().await;
 
-        if guard.contains_key(dgram_src) {
-            self._send(&mut guard, dgram_src, pkt);
+        if guard.contains_key(&key) {
+            self._send(&mut guard, &key, pkt);
             return;
         }
 
@@ -150,17 +164,17 @@ impl NatManager {
         // from inbound listener might have a default (empty) destination.
         sess.destination = pkt.dst_addr.clone();
 
-        self.add_session(sess, dgram_src.clone(), client_ch_tx.clone(), &mut guard)
+        self.add_session(sess, key.clone(), client_ch_tx.clone(), &mut guard)
             .await;
 
         debug!(
             "added udp session {} -> {} ({})",
-            &dgram_src,
+            &key,
             &pkt.dst_addr,
             guard.len(),
         );
 
-        self._send(&mut guard, dgram_src, pkt);
+        self._send(&mut guard, &key, pkt);
 
         drop(guard);
     }
