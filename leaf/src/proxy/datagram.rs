@@ -187,7 +187,7 @@ impl OutboundDatagram for DomainAssociatedOutboundDatagram {
 
 fn unmapped_ipv4(addr: SocketAddr) -> SocketAddr {
     if let SocketAddr::V6(ref a) = addr {
-        if let Some(a_v4) = a.ip().to_ipv4() {
+        if let Some(a_v4) = a.ip().to_ipv4_mapped() {
             return SocketAddr::new(IpAddr::V4(a_v4), a.port());
         }
     }
@@ -309,5 +309,26 @@ impl InboundDatagramSendHalf for SimpleInboundDatagramSendHalf {
 
     async fn close(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unmapped_ipv4_behavior() {
+        // ::1 loopback must NOT be converted to 0.0.0.1
+        let v6_loopback: SocketAddr = "[::1]:12345".parse().unwrap();
+        assert_eq!(unmapped_ipv4(v6_loopback), v6_loopback);
+
+        // Standard IPv6 must NOT be converted
+        let standard_v6: SocketAddr = "[2001:db8::1]:12345".parse().unwrap();
+        assert_eq!(unmapped_ipv4(standard_v6), standard_v6);
+
+        // IPv4-mapped IPv6 SHOULD be converted to canonical IPv4
+        let v4_mapped: SocketAddr = "[::ffff:192.168.1.100]:12345".parse().unwrap();
+        let expected_v4: SocketAddr = "192.168.1.100:12345".parse().unwrap();
+        assert_eq!(unmapped_ipv4(v4_mapped), expected_v4);
     }
 }

@@ -44,6 +44,8 @@ impl std::fmt::Display for UdpPacket {
 
 type SessionMap = HashMap<DatagramSource, (Sender<UdpPacket>, oneshot::Sender<bool>, Instant)>;
 
+const NAT_DOWNLINK_BUFFER_SIZE: usize = 65536; // 64 KiB to prevent downlink packet truncation
+
 pub struct NatManager {
     sessions: Arc<Mutex<SessionMap>>,
     dispatcher: Arc<Dispatcher>,
@@ -229,7 +231,9 @@ impl NatManager {
                 // downlink
                 let raddr_downlink = raddr_cloned.clone();
                 let downlink_task = async move {
-                    let mut buf = vec![0u8; *crate::option::DATAGRAM_BUFFER_SIZE * 1024];
+                    let buf_size =
+                        (*crate::option::DATAGRAM_BUFFER_SIZE * 1024).max(NAT_DOWNLINK_BUFFER_SIZE);
+                    let mut buf = vec![0u8; buf_size];
                     loop {
                         match target_sock_recv.recv_from(&mut buf).await {
                             Err(err) => {

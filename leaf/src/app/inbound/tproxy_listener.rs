@@ -49,7 +49,7 @@ struct AlignedControlBuf([u8; 256]);
 fn unmapped_socket_addr(addr: SocketAddr) -> SocketAddr {
     match addr {
         SocketAddr::V6(v6) => {
-            if let Some(v4) = v6.ip().to_ipv4() {
+            if let Some(v4) = v6.ip().to_ipv4_mapped() {
                 SocketAddr::new(std::net::IpAddr::V4(v4), v6.port())
             } else {
                 SocketAddr::V6(v6)
@@ -298,7 +298,7 @@ impl TproxySendHalf {
         // Defensive normalization: if one is IPv4 and one is IPv6, align them
         if src.is_ipv4() && dst.is_ipv6() {
             if let std::net::IpAddr::V6(v6) = dst.ip() {
-                if let Some(v4) = v6.to_ipv4() {
+                if let Some(v4) = v6.to_ipv4_mapped() {
                     dst = SocketAddr::new(std::net::IpAddr::V4(v4), dst.port());
                 }
             }
@@ -465,5 +465,23 @@ impl TproxyInboundListener {
         }
 
         Ok(runners)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unmapped_socket_addr() {
+        let v6_loopback: SocketAddr = "[::1]:12345".parse().unwrap();
+        assert_eq!(unmapped_socket_addr(v6_loopback), v6_loopback);
+
+        let standard_v6: SocketAddr = "[240e:305:1890::1]:80".parse().unwrap();
+        assert_eq!(unmapped_socket_addr(standard_v6), standard_v6);
+
+        let mapped: SocketAddr = "[::ffff:192.168.0.71]:12345".parse().unwrap();
+        let expected: SocketAddr = "192.168.0.71:12345".parse().unwrap();
+        assert_eq!(unmapped_socket_addr(mapped), expected);
     }
 }
