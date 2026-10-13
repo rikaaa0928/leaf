@@ -10,14 +10,15 @@
 // transparent socket bound to the original destination so the client sees the
 // reply coming from the address it originally talked to.
 
-use std::collections::HashMap;
 use std::io;
 use std::mem;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
 use anyhow::Result;
+use lru::LruCache;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc::channel as tokio_channel;
@@ -38,6 +39,8 @@ const IP_ORIGDSTADDR: libc::c_int = 20;
 const IPV6_RECVORIGDSTADDR: libc::c_int = 74;
 const IPV6_ORIGDSTADDR: libc::c_int = 74;
 const IPV6_TRANSPARENT: libc::c_int = 75;
+
+const DEFAULT_TPROXY_SENDER_LRU_CAP: usize = 512;
 
 fn setsockopt_int(
     fd: libc::c_int,
@@ -63,9 +66,10 @@ fn setsockopt_int(
 
 fn set_ip_transparent(fd: libc::c_int, is_v6: bool) -> io::Result<()> {
     if is_v6 {
-        setsockopt_int(fd, libc::SOL_IPV6, IPV6_TRANSPARENT, 1)
-            // some kernels also need the v4 option on a dual-stack socket
-            .or_else(|_| setsockopt_int(fd, libc::SOL_IP, IP_TRANSPARENT, 1))
+        setsockopt_int(fd, libc::SOL_IPV6, IPV6_TRANSPARENT, 1)?;
+        // some kernels also need the v4 option on a dual-stack socket
+        let _ = setsockopt_int(fd, libc::SOL_IP, IP_TRANSPARENT, 1);
+        Ok(())
     } else {
         setsockopt_int(fd, libc::SOL_IP, IP_TRANSPARENT, 1)
     }
@@ -95,6 +99,9 @@ fn storage_to_socketaddr(
 fn new_tproxy_tcp_listener(addr: SocketAddr) -> io::Result<tokio::net::TcpListener> {
     let socket = Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP))?;
     socket.set_reuse_address(true)?;
+    if addr.is_ipv6() {
+        let _ = socket.set_only_v6(false);
+    }
     set_ip_transparent(socket.as_raw_fd(), addr.is_ipv6())?;
     socket.set_nonblocking(true)?;
     socket.bind(&addr.into())?;
@@ -108,6 +115,9 @@ fn new_tproxy_tcp_listener(addr: SocketAddr) -> io::Result<tokio::net::TcpListen
 fn new_tproxy_udp_listener(addr: SocketAddr) -> io::Result<std::net::UdpSocket> {
     let socket = Socket::new(Domain::for_address(addr), Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_reuse_address(true)?;
+    if addr.is_ipv6() {
+        let _ = socket.set_only_v6(false);
+    }
     set_ip_transparent(socket.as_raw_fd(), addr.is_ipv6())?;
     set_recv_origdstaddr(socket.as_raw_fd(), addr.is_ipv6())?;
     socket.set_nonblocking(true)?;
@@ -217,12 +227,21 @@ impl TproxyRecvHalf {
     }
 }
 
-// Send half: keeps one transparent socket per spoofed source address.
+// Send half: keeps transparent sockets per spoofed source address using an LRU cache
+// to bound file descriptor usage and avoid socket descriptor leaks.
 struct TproxySendHalf {
-    senders: HashMap<SocketAddr, tokio::net::UdpSocket>,
+    senders: LruCache<SocketAddr, tokio::net::UdpSocket>,
 }
 
 impl TproxySendHalf {
+    fn new(cap: usize) -> Self {
+        let cap = NonZeroUsize::new(cap)
+            .unwrap_or_else(|| NonZeroUsize::new(DEFAULT_TPROXY_SENDER_LRU_CAP).unwrap());
+        Self {
+            senders: LruCache::new(cap),
+        }
+    }
+
     async fn send_to(
         &mut self,
         buf: &[u8],
@@ -233,11 +252,14 @@ impl TproxySendHalf {
             .ip()
             .map(|ip| SocketAddr::new(ip, src_addr.port()))
             .ok_or_else(|| io::Error::other("tproxy: reply source is not an ip"))?;
-        if !self.senders.contains_key(&src) {
+        if !self.senders.contains(&src) {
             let socket = new_tproxy_udp_sender(src)?;
-            self.senders.insert(src, socket);
+            self.senders.put(src, socket);
         }
-        let socket = self.senders.get(&src).unwrap();
+        let socket = self
+            .senders
+            .get_mut(&src)
+            .expect("sender socket must exist after ensure");
         socket.send_to(buf, dst_addr).await
     }
 }
@@ -250,7 +272,12 @@ pub struct TproxyInboundListener {
 
 impl TproxyInboundListener {
     pub fn listen(&self) -> Result<Vec<Runner>> {
-        let listen_addr = SocketAddr::new(self.inbound.address.parse()?, self.inbound.port as u16);
+        let ip: std::net::IpAddr = self
+            .inbound
+            .address
+            .trim_matches(|c| c == '[' || c == ']')
+            .parse()?;
+        let listen_addr = SocketAddr::new(ip, self.inbound.port as u16);
         let tag = self.inbound.tag.clone();
         let mut runners: Vec<Runner> = Vec::new();
 
@@ -277,6 +304,10 @@ impl TproxyInboundListener {
                                     continue;
                                 }
                             };
+                            if orig == listen_addr {
+                                debug!("tproxy: loopback TCP connection detected to {}, dropping", orig);
+                                continue;
+                            }
                             let sess = Session {
                                 network: Network::Tcp,
                                 source: peer,
@@ -321,9 +352,7 @@ impl TproxyInboundListener {
                 info!("tproxy listening udp {}", listen_addr);
 
                 let mut lr = TproxyRecvHalf { afd };
-                let mut ls = TproxySendHalf {
-                    senders: HashMap::new(),
-                };
+                let mut ls = TproxySendHalf::new(DEFAULT_TPROXY_SENDER_LRU_CAP);
 
                 let (l_tx, mut l_rx): (TokioSender<UdpPacket>, TokioReceiver<UdpPacket>) =
                     tokio_channel(*crate::option::UDP_UPLINK_CHANNEL_SIZE);
@@ -340,17 +369,23 @@ impl TproxyInboundListener {
 
                 // Uplink: client datagrams into the NAT manager.
                 let mut buf = vec![0u8; *crate::option::DATAGRAM_BUFFER_SIZE * 1024];
+                let loopback_dst = SocksAddr::from(listen_addr);
                 loop {
                     match lr.recv_from(&mut buf).await {
                         Err(ProxyError::DatagramFatal(e)) => {
-                            warn!("tproxy udp recv fatal: {}", e);
-                            break;
+                            warn!("tproxy udp recv fatal: {}, retrying after backoff...", e);
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            continue;
                         }
                         Err(ProxyError::DatagramWarn(e)) => {
                             debug!("tproxy udp recv warn: {}", e);
                             continue;
                         }
                         Ok((n, dgram_src, dst_addr)) => {
+                            if dst_addr == loopback_dst {
+                                debug!("tproxy: loopback UDP datagram detected to {}, dropping", dst_addr);
+                                continue;
+                            }
                             debug!("tproxy udp src={} dst={} len={}", dgram_src.address, dst_addr, n);
                             let pkt = UdpPacket::new(
                                 buf[..n].to_vec(),

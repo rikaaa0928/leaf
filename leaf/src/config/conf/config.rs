@@ -44,6 +44,9 @@ pub struct General {
     pub socks_port: Option<u16>,
     pub api_interface: Option<String>,
     pub api_port: Option<u16>,
+    pub tproxy: Option<String>,
+    pub tproxy_interface: Option<String>,
+    pub tproxy_port: Option<u16>,
     pub routing_domain_resolve: Option<bool>,
     pub wintun: Option<String>,
     pub tun_dns_server: Option<Vec<String>>,
@@ -582,6 +585,15 @@ pub fn from_lines(lines: Vec<io::Result<String>>) -> Result<Config> {
             "api-port" => {
                 general.api_port = get_value::<u16>(parts[1]);
             }
+            "tproxy" => {
+                general.tproxy = get_string(parts[1]);
+            }
+            "tproxy-interface" => {
+                general.tproxy_interface = get_string(parts[1]);
+            }
+            "tproxy-port" => {
+                general.tproxy_port = get_value::<u16>(parts[1]);
+            }
             "wintun" => {
                 general.wintun = get_string(parts[1]);
             }
@@ -1084,6 +1096,46 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                 address: Some(interface.clone()),
                 port: Some(*port),
                 settings: common::InboundSettings::Socks { settings: None },
+            });
+        }
+
+        if let Some(tproxy_str) = ext_general.tproxy.as_ref() {
+            let (interface, port) = if let Ok(port) = tproxy_str.parse::<u16>() {
+                ("0.0.0.0".to_string(), port)
+            } else if let Ok(addr) = tproxy_str.parse::<std::net::SocketAddr>() {
+                (addr.ip().to_string(), addr.port())
+            } else if let Some(items) = get_char_sep_slice(tproxy_str, ',') {
+                if items.len() >= 2 {
+                    (
+                        items[0].trim().to_string(),
+                        get_value::<u16>(&items[1]).unwrap_or(0),
+                    )
+                } else {
+                    (
+                        "0.0.0.0".to_string(),
+                        get_value::<u16>(&items[0]).unwrap_or(0),
+                    )
+                }
+            } else {
+                ("0.0.0.0".to_string(), 0)
+            };
+            if port > 0 {
+                inbounds.push(common::Inbound {
+                    tag: Some("tproxy".to_string()),
+                    address: Some(interface),
+                    port: Some(port),
+                    settings: common::InboundSettings::Tproxy,
+                });
+            }
+        } else if let (Some(interface), Some(port)) = (
+            ext_general.tproxy_interface.as_ref(),
+            ext_general.tproxy_port.as_ref(),
+        ) {
+            inbounds.push(common::Inbound {
+                tag: Some("tproxy".to_string()),
+                address: Some(interface.clone()),
+                port: Some(*port),
+                settings: common::InboundSettings::Tproxy,
             });
         }
 
@@ -2248,6 +2300,54 @@ FINAL, Direct
         };
         let target2 = router.pick_route(&sess2).await.unwrap();
         assert_eq!(target2, None);
+    }
+
+    #[test]
+    fn test_tproxy_conf() {
+        let conf = r#"
+[General]
+tproxy = 0.0.0.0:12345
+
+[Proxy]
+Direct = direct
+
+[Rule]
+FINAL, Direct
+"#;
+        let lines: Vec<io::Result<String>> = conf.lines().map(|s| Ok(s.to_string())).collect();
+        let config = from_lines(lines).unwrap();
+        let internal = to_internal(&config).unwrap();
+        let tproxy_inbounds: Vec<_> = internal
+            .inbounds
+            .iter()
+            .filter(|i| i.protocol == "tproxy")
+            .collect();
+        assert_eq!(tproxy_inbounds.len(), 1);
+        assert_eq!(tproxy_inbounds[0].address, "0.0.0.0");
+        assert_eq!(tproxy_inbounds[0].port, 12345);
+
+        // Test dual-stack / IPv6
+        let conf_v6 = r#"
+[General]
+tproxy = [::]:12345
+
+[Proxy]
+Direct = direct
+
+[Rule]
+FINAL, Direct
+"#;
+        let lines_v6: Vec<io::Result<String>> =
+            conf_v6.lines().map(|s| Ok(s.to_string())).collect();
+        let config_v6 = from_lines(lines_v6).unwrap();
+        let internal_v6 = to_internal(&config_v6).unwrap();
+        let tproxy_v6 = internal_v6
+            .inbounds
+            .iter()
+            .find(|i| i.protocol == "tproxy")
+            .unwrap();
+        assert_eq!(tproxy_v6.address, "::");
+        assert_eq!(tproxy_v6.port, 12345);
     }
 }
 
