@@ -48,6 +48,7 @@ rog-default-ring = [
     "ring-aead",
     "rustls-tls",
     "rustls-tls-ring",
+    "quinn-ring",
     "api",
 ]
 
@@ -57,6 +58,7 @@ rog-default-aws-lc = [
     "aws-lc-aead",
     "rustls-tls",
     "rustls-tls-aws-lc",
+    "quinn-aws-lc",
     "api",
 ]
 
@@ -65,6 +67,9 @@ rog-default-openssl = [
     "rog-endpoints",
     "openssl-aead",
     "openssl-tls",
+    "rustls-tls",
+    "rustls-tls-ring",
+    "quinn-ring",
     "api",
 ]
 
@@ -117,6 +122,7 @@ all-endpoints = [
     "outbound-mptp",
     "outbound-rog",
     "outbound-rog-tcp",
+    "outbound-rog-h3",
     # "outbound-select",
 ]
 rog-endpoints = [
@@ -127,6 +133,7 @@ rog-endpoints = [
     "outbound-socks",
     "outbound-rog",
     "outbound-rog-tcp",
+    "outbound-rog-h3",
 ]
 
 # Ring-related
@@ -168,6 +175,7 @@ outbound-select = ["directories", "axum/query"]
 outbound-vmess = ["lz_fnv", "cfb-mode", "hmac", "sha2", "aes", "aes-gcm", "sha3", "digest", "md-5", "tokio-util", "byteorder", "crc32fast"]
 outbound-rog = ["tonic", "prost", "tokio-stream", "tonic-prost", "tower", "hyper-util"]
 outbound-rog-tcp = ["tonic", "tonic-prost", "prost", "chacha20poly1305", "sha2", "base64"]
+outbound-rog-h3 = ["h3", "h3-quinn", "h2", "http", "rustls-tls"]
 
 # Inbounds
 inbound-trojan = ["sha2", "hex"]
@@ -312,6 +320,9 @@ hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 # QUIC
 quinn = { version = "0.11", default-features = false, optional = true }
 rustls = { version = "0.23", default-features = false, features = ["std"], optional = true }
+h3 = { version = "0.0.8", optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
+h2 = { version = "0.4", optional = true }
 
 # Reality
 reality = { git = "https://github.com/eycorsican/reality-rs.git", optional = true }

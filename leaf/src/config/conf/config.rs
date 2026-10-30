@@ -1567,6 +1567,23 @@ pub fn to_common(conf: &Config) -> Result<common::Config> {
                         },
                     });
                 }
+                "rog-h3" | "rog_h3" => {
+                    outbounds.push(common::Outbound {
+                        tag: Some(ext_proxy.tag.clone()),
+                        settings: common::OutboundSettings::RogH3 {
+                            settings: Some(common::RogOutboundSettings {
+                                address: ext_proxy.address.clone(),
+                                port: ext_proxy.port,
+                                password: ext_proxy.password.clone(),
+                                custom_connector: ext_proxy.custom_connector,
+                                keep_alive: ext_proxy.keep_alive,
+                                keep_alive_interval_secs: ext_proxy.keep_alive_interval_secs,
+                                keep_alive_timeout_secs: ext_proxy.keep_alive_timeout_secs,
+                                keep_alive_while_idle: ext_proxy.keep_alive_while_idle,
+                            }),
+                        },
+                    });
+                }
                 _ => {}
             }
         }
@@ -1870,6 +1887,55 @@ ROGTCP = rog_tcp, jp.bilibili.network, 443, password=123456
         assert_eq!(settings.address, "jp.bilibili.network");
         assert_eq!(settings.port, 443);
         assert_eq!(settings.password, "123456");
+    }
+
+    #[test]
+    fn test_rog_h3_mapping() {
+        let conf = r#"
+[Proxy]
+ROGH3 = rog-h3, jp.bilibili.network, 443, password=123456, custom-connector=true, keep-alive=false, keep-alive-interval-secs=25, keep-alive-timeout-secs=45, keep-alive-while-idle=false
+"#;
+        let lines: Vec<io::Result<String>> = conf.lines().map(|s| Ok(s.to_string())).collect();
+        let config = from_lines(lines).unwrap();
+        let common = to_common(&config).unwrap();
+
+        let outbounds = common.outbounds.unwrap();
+        let rog_h3 = outbounds
+            .iter()
+            .find(|o| o.tag == Some("ROGH3".to_string()))
+            .unwrap();
+        if let common::OutboundSettings::RogH3 { settings } = &rog_h3.settings {
+            let settings = settings.as_ref().unwrap();
+            assert_eq!(settings.address, Some("jp.bilibili.network".to_string()));
+            assert_eq!(settings.port, Some(443));
+            assert_eq!(settings.password, Some("123456".to_string()));
+            assert_eq!(settings.custom_connector, Some(true));
+            assert_eq!(settings.keep_alive, Some(false));
+            assert_eq!(settings.keep_alive_interval_secs, Some(25));
+            assert_eq!(settings.keep_alive_timeout_secs, Some(45));
+            assert_eq!(settings.keep_alive_while_idle, Some(false));
+        } else {
+            panic!("Not rog-h3 outbound: {:?}", rog_h3.settings);
+        }
+
+        let internal = to_internal(&config).unwrap();
+        let rog_h3 = internal
+            .outbounds
+            .iter()
+            .find(|o| o.tag == "ROGH3")
+            .unwrap();
+        assert_eq!(rog_h3.protocol, "rog-h3");
+        let settings =
+            crate::config::internal::RogOutboundSettings::parse_from_bytes(&rog_h3.settings)
+                .unwrap();
+        assert_eq!(settings.address, "jp.bilibili.network");
+        assert_eq!(settings.port, 443);
+        assert_eq!(settings.password, "123456");
+        assert!(settings.custom_connector);
+        assert!(!settings.keep_alive);
+        assert_eq!(settings.keep_alive_interval_secs, 25);
+        assert_eq!(settings.keep_alive_timeout_secs, 45);
+        assert_eq!(settings.keep_alive_while_idle, Some(false));
     }
 
     #[test]

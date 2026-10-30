@@ -41,6 +41,8 @@ use crate::proxy::reality;
 use crate::proxy::redirect;
 #[cfg(feature = "outbound-rog")]
 use crate::proxy::rog;
+#[cfg(feature = "outbound-rog-h3")]
+use crate::proxy::rog_h3;
 #[cfg(feature = "outbound-rog-tcp")]
 use crate::proxy::rog_tcp;
 #[cfg(feature = "outbound-shadowsocks")]
@@ -319,6 +321,38 @@ impl OutboundManager {
                         port: settings.port as u16,
                         password: settings.password,
                     });
+                    HandlerBuilder::default()
+                        .tag(tag.clone())
+                        .stream_handler(stream)
+                        .datagram_handler(datagram)
+                        .build()
+                }
+                #[cfg(feature = "outbound-rog-h3")]
+                "rog-h3" | "rog_h3" => {
+                    let settings =
+                        config::RogOutboundSettings::parse_from_bytes(&outbound.settings)
+                            .map_err(|e| anyhow!("invalid [{}] outbound settings: {}", &tag, e))?;
+                    let client_options = rog_h3::ClientOptions::new(
+                        settings.keep_alive,
+                        settings.keep_alive_interval_secs,
+                        settings.keep_alive_timeout_secs,
+                        settings.keep_alive_while_idle,
+                    );
+                    let connector = Arc::new(
+                        rog_h3::RogH3Connector::new(
+                            settings.address.clone(),
+                            settings.port as u16,
+                            settings.password.clone(),
+                            settings.custom_connector,
+                            client_options,
+                            dns_client.clone(),
+                        )
+                        .map_err(|e| anyhow!("invalid [{}] rog-h3 outbound: {}", &tag, e))?,
+                    );
+                    let stream = Arc::new(rog_h3::outbound::StreamHandler {
+                        connector: connector.clone(),
+                    });
+                    let datagram = Arc::new(rog_h3::outbound::DatagramHandler { connector });
                     HandlerBuilder::default()
                         .tag(tag.clone())
                         .stream_handler(stream)

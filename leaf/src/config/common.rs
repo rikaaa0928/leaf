@@ -518,6 +518,11 @@ pub enum OutboundSettings {
         #[serde(default)]
         settings: Option<RogTcpOutboundSettings>,
     },
+    #[serde(rename = "rog-h3", alias = "rog_h3")]
+    RogH3 {
+        #[serde(default)]
+        settings: Option<RogOutboundSettings>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1067,6 +1072,44 @@ pub fn to_internal(mut config: Config) -> Result<internal::Config> {
                         }
                         if let Some(ext_password) = &ext_settings.password {
                             settings.password = ext_password.clone();
+                        }
+                        let settings = settings.write_to_bytes().unwrap();
+                        outbound.settings = settings;
+                    }
+                    outbounds.push(outbound);
+                }
+                OutboundSettings::RogH3 {
+                    settings: ext_settings,
+                } => {
+                    outbound.protocol = "rog-h3".to_string();
+                    if let Some(ext_settings) = ext_settings {
+                        let mut settings = internal::RogOutboundSettings::new();
+                        if let Some(ext_address) = &ext_settings.address {
+                            settings.address = ext_address.clone();
+                        }
+                        if let Some(ext_port) = ext_settings.port {
+                            settings.port = ext_port as u32;
+                        }
+                        if let Some(ext_password) = &ext_settings.password {
+                            settings.password = ext_password.clone();
+                        }
+                        if let Some(custom_connector) = ext_settings.custom_connector {
+                            settings.custom_connector = custom_connector;
+                        }
+                        if let Some(keep_alive) = ext_settings.keep_alive {
+                            settings.keep_alive = keep_alive;
+                        }
+                        if let Some(keep_alive_interval_secs) =
+                            ext_settings.keep_alive_interval_secs
+                        {
+                            settings.keep_alive_interval_secs = keep_alive_interval_secs;
+                        }
+                        if let Some(keep_alive_timeout_secs) = ext_settings.keep_alive_timeout_secs
+                        {
+                            settings.keep_alive_timeout_secs = keep_alive_timeout_secs;
+                        }
+                        if let Some(keep_alive_while_idle) = ext_settings.keep_alive_while_idle {
+                            settings.keep_alive_while_idle = Some(keep_alive_while_idle);
                         }
                         let settings = settings.write_to_bytes().unwrap();
                         outbound.settings = settings;

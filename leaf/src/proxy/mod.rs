@@ -68,6 +68,8 @@ pub mod reality;
 pub mod redirect;
 #[cfg(feature = "outbound-rog")]
 pub mod rog;
+#[cfg(feature = "outbound-rog-h3")]
+pub mod rog_h3;
 #[cfg(feature = "outbound-rog-tcp")]
 pub mod rog_tcp;
 #[cfg(feature = "outbound-select")]
